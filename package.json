@@ -1,0 +1,20 @@
+{
+  "name": "stickman-city-runner",
+  "version": "1.0.0",
+  "description": "A 3D Stickman Runner Game",
+  "main": "index.html",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.160.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+}
