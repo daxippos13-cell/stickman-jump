@@ -3,9 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stickman 3D: Cactus Runner</title>
-  <script type="module" crossorigin src="./assets/index-BDcx_PVc.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-CfkDmUZc.css">
+    <title>Stickman City Runner 3D</title>
+  <script type="module" crossorigin src="./assets/index-BzMZxP7g.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-BxC_qLCk.css">
 </head>
 <body>
     <div id="ui-layer">
@@ -20,55 +20,26 @@
         </div>
         
         <div id="main-menu">
-            <h1 class="glitch-text">STICKMAN<br>CACTUS RUNNER</h1>
-            <p>JUMP THE CACTUS. SLIDE THE BARRIER.</p>
-            
-            <div class="menu-options">
-                <div class="option-group">
-                    <label>PLAYERS</label>
-                    <div class="toggle-btn-group" id="player-select">
-                        <button class="toggle-btn active" data-value="1">1P</button>
-                        <button class="toggle-btn" data-value="2">2P</button>
-                    </div>
-                </div>
-
-                <div class="option-group">
-                    <label>SPEED</label>
-                    <div class="toggle-btn-group" id="speed-select">
-                        <button class="toggle-btn" data-value="slow">SLOW</button>
-                        <button class="toggle-btn active" data-value="normal">NORMAL</button>
-                    </div>
-                </div>
-            </div>
-
-            <button id="start-btn">INITIATE RUN</button>
-            
+            <h1>STICKMAN<br>CITY RUNNER</h1>
+            <p>Jump over buildings. Slide under barriers.</p>
+            <button id="start-btn">RUN NOW</button>
             <div class="controls-hint">
-                <div class="p1-controls">
-                    <span class="player-label">P1</span>
-                    <span>[W] JUMP</span>
-                    <span>[S] SLIDE</span>
-                </div>
-                <div class="p2-controls hidden" id="p2-hint">
-                    <span class="player-label">P2</span>
-                    <span>[UP] JUMP</span>
-                    <span>[DOWN] SLIDE</span>
-                </div>
+                <span>[SPACE/UP/W] Jump</span>
+                <span>[DOWN/S] Slide</span>
             </div>
         </div>
 
         <div id="game-over" class="hidden">
-            <h1 class="glitch-text">CRITICAL FAILURE</h1>
-            <p>Score: <span id="final-score">0</span></p>
-            <p id="winner-text" class="hidden"></p>
-            <button id="restart-btn">REBOOT SYSTEM</button>
+            <h1>WIPEOUT!</h1>
+            <p>Distance Run: <span id="final-score">0</span>m</p>
+            <button id="restart-btn">RUN AGAIN</button>
         </div>
         
         <div id="mobile-controls">
-            <!-- Mobile controls are 1P only for now -->
             <button class="touch-btn" id="btn-duck">SLIDE</button>
             <button class="touch-btn" id="btn-jump">JUMP</button>
         </div>
     </div>
+    
 </body>
 </html>
