@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Stickman City Runner 3D</title>
     <link rel="stylesheet" href="./style.css">
 </head>
@@ -21,7 +21,10 @@
         <div id="main-menu">
             <h1 class="glitch-text">STICKMAN<br>CITY RUNNER</h1>
             <p>Master the Machine. Run the Grid.</p>
-            <button id="start-btn">INITIATE RUN</button>
+            <div class="menu-buttons">
+                <button id="start-btn">INITIATE RUN</button>
+                <button id="menu-leaderboard-btn" class="secondary-btn">🏆 LEADERBOARD</button>
+            </div>
             <div class="controls-hint">
                 <span>[SPACE] Jump / Double Jump</span>
                 <span>[DOWN] Phase Slide</span>
@@ -31,7 +34,30 @@
         <div id="game-over" class="hidden">
             <h1 class="glitch-text">SYSTEM FAILURE</h1>
             <p>Resonance distance: <span id="final-score">0</span>nm</p>
-            <button id="restart-btn">REBOOT SYSTEM</button>
+            
+            <div id="online-submit-container">
+                <div class="submit-header">RECORD SCORE TO NEON GRID</div>
+                <div class="input-row">
+                    <input type="text" id="player-name-input" placeholder="CALLSIGN (MAX 12)" maxlength="12" autocomplete="off" spellcheck="false">
+                    <button id="submit-score-btn">SUBMIT</button>
+                </div>
+                <div id="submit-status" class="hidden"></div>
+            </div>
+
+            <div class="game-over-buttons">
+                <button id="restart-btn">REBOOT SYSTEM</button>
+                <button id="view-leaderboard-btn" class="secondary-btn">🏆 LEADERBOARD</button>
+            </div>
+        </div>
+
+        <div id="leaderboard-modal" class="hidden">
+            <div class="leaderboard-content">
+                <h2 class="glitch-text">GLOBAL LEADERBOARD</h2>
+                <div class="leaderboard-subtitle">TOP CYBER RUNNERS</div>
+                <div id="leaderboard-loading">CONNECTING TO NEON GRID...</div>
+                <div id="leaderboard-list"></div>
+                <button id="close-leaderboard-btn">CLOSE</button>
+            </div>
         </div>
         
         <div id="mobile-controls">

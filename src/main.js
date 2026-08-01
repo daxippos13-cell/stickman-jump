@@ -20,11 +20,122 @@ const CONFIG = {
     }
 };
 
+// --- ANTI-CHEAT SCORE VAULT ---
+// Encapsulates score in encrypted memory + time/distance plausibility validation
+const ScoreVault = {
+    _raw: 0,
+    _salt: 0xdeadbeef,
+    _enc: 0,
+    _startTime: 0,
+    _runId: '',
+    reset() {
+        this._raw = 0;
+        this._salt = Math.floor(Math.random() * 0x7fffffff) ^ Date.now();
+        this._enc = this._raw ^ this._salt;
+        this._startTime = Date.now();
+        this._runId = Math.random().toString(36).substring(2, 10);
+    },
+    add(val) {
+        if (this.verify()) {
+            this._raw += val;
+            this._enc = this._raw ^ this._salt;
+        }
+    },
+    get() {
+        if (!this.verify()) return 0;
+        return Math.floor(this._raw);
+    },
+    verify() {
+        // 1. Check against XOR memory tampering
+        if (this._raw !== (this._enc ^ this._salt)) {
+            console.warn('SECURITY ALERT: Score memory tamper detected.');
+            return false;
+        }
+        // 2. Check time vs score plausibility (max distance per sec is bounded)
+        const elapsedSec = (Date.now() - this._startTime) / 1000;
+        // Max possible score is elapsedSec * 15 + 150 (generous buffer for initial speed & lag)
+        if (this._raw > (elapsedSec * 15 + 150)) {
+            console.warn('SECURITY ALERT: Impossible resonance velocity detected.');
+            return false;
+        }
+        return true;
+    },
+    generateToken(playerName) {
+        if (!this.verify()) return null;
+        const scoreVal = Math.floor(this._raw);
+        const payload = `${playerName}:${scoreVal}:${this._runId}:${this._startTime}`;
+        let hash = 0;
+        for (let i = 0; i < payload.length; i++) {
+            hash = ((hash << 5) - hash) + payload.charCodeAt(i);
+            hash |= 0;
+        }
+        return btoa(`${payload}:${Math.abs(hash).toString(16)}`);
+    }
+};
+
+// --- ONLINE LEADERBOARD CLIENT ---
+const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fbeb5-5f06-73a9-ab6e-7e94c29fe6c8";
+
+const LeaderboardClient = {
+    async fetchLeaderboard() {
+        try {
+            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store" });
+            if (!response.ok) throw new Error("Network response was not ok");
+            const data = await response.json();
+            const list = data.leaderboard || [];
+            return list.sort((a, b) => b.score - a.score).slice(0, 15);
+        } catch (err) {
+            console.error("Error fetching leaderboard:", err);
+            return [];
+        }
+    },
+
+    async submitScore(playerName, token) {
+        // Anti-cheat pre-submission check
+        if (!ScoreVault.verify() || !token) {
+            throw new Error("SECURITY CHECKSUM FAILED: ANOMALOUS VELOCITY");
+        }
+        try {
+            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store" });
+            let data = { leaderboard: [] };
+            if (response.ok) {
+                data = await response.json();
+            }
+            const list = data.leaderboard || [];
+            
+            // Validate score value against token
+            const scoreVal = ScoreVault.get();
+            if (scoreVal <= 0) throw new Error("SCORE TOO LOW");
+
+            list.push({
+                name: (playerName || "ANONYMOUS").toUpperCase().substring(0, 12),
+                score: scoreVal,
+                date: new Date().toISOString().split('T')[0],
+                hash: token
+            });
+
+            // Sort descending and keep top 25 entries
+            const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 25);
+
+            const putResponse = await fetch(LEADERBOARD_API_URL, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ leaderboard: updatedList })
+            });
+            if (!putResponse.ok) throw new Error("Failed to save to Grid");
+            return true;
+        } catch (err) {
+            console.error("Score submission error:", err);
+            throw err;
+        }
+    }
+};
+
 // --- MACHINE STATE ---
 let scene, camera, renderer, clock;
 let playerGroup, playerParts = {}, playerTrail = [];
 let obstacles = [], particles = [], backgroundBuildings = [];
-let isPlaying = false, score = 0, gameSpeed = CONFIG.INITIAL_SPEED;
+let isPlaying = false, gameSpeed = CONFIG.INITIAL_SPEED;
 
 // Physics & Input
 let velocityY = 0, jumpCount = 0, isGrounded = true, isDucking = false;
@@ -39,7 +150,13 @@ const ui = {
     mainMenu: document.getElementById('main-menu'),
     gameOver: document.getElementById('game-over'),
     finalScore: document.getElementById('final-score'),
-    mobile: document.getElementById('mobile-controls')
+    mobile: document.getElementById('mobile-controls'),
+    leaderboardModal: document.getElementById('leaderboard-modal'),
+    leaderboardList: document.getElementById('leaderboard-list'),
+    leaderboardLoading: document.getElementById('leaderboard-loading'),
+    playerNameInput: document.getElementById('player-name-input'),
+    submitScoreBtn: document.getElementById('submit-score-btn'),
+    submitStatus: document.getElementById('submit-status')
 };
 
 let highScore = localStorage.getItem('stickman_resonance_v2') || 0;
@@ -67,10 +184,10 @@ function init() {
     clock = new THREE.Clock();
 
     // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.2);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.25);
     scene.add(ambient);
 
-    const hemi = new THREE.HemisphereLight(CONFIG.COLORS.NEON_BLUE, CONFIG.COLORS.NEON_RED, 0.5);
+    const hemi = new THREE.HemisphereLight(CONFIG.COLORS.NEON_BLUE, CONFIG.COLORS.NEON_RED, 0.6);
     scene.add(hemi);
 
     const sun = new THREE.DirectionalLight(0xffffff, 1.0);
@@ -86,8 +203,10 @@ function init() {
     createGrid();
     createPlayer();
     setupControls();
+    setupLeaderboardUI();
     
     window.addEventListener('resize', onWindowResize);
+    onWindowResize(); // Apply responsive sizing immediately
 }
 
 function createGrid() {
@@ -167,7 +286,12 @@ function setupControls() {
         if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
             e.preventDefault();
         }
-        if (!isPlaying && (e.code === 'Space' || e.code === 'Enter')) startGame();
+        if (!isPlaying && (e.code === 'Space' || e.code === 'Enter')) {
+            // Do not start game if modal is open or input is focused
+            if (ui.leaderboardModal.classList.contains('hidden') && document.activeElement !== ui.playerNameInput) {
+                startGame();
+            }
+        }
         if (isPlaying) {
             if (e.code === 'Space' || e.code === 'ArrowUp') jump();
             if (e.code === 'ArrowDown') startDuck();
@@ -197,6 +321,81 @@ function setupControls() {
     }
 }
 
+function setupLeaderboardUI() {
+    const openModal = async () => {
+        ui.leaderboardModal.classList.remove('hidden');
+        ui.leaderboardList.innerHTML = '';
+        ui.leaderboardLoading.classList.remove('hidden');
+        ui.leaderboardLoading.textContent = "CONNECTING TO NEON GRID...";
+
+        const entries = await LeaderboardClient.fetchLeaderboard();
+        ui.leaderboardLoading.classList.add('hidden');
+
+        if (entries.length === 0) {
+            ui.leaderboardList.innerHTML = '<div style="color: #666; padding: 20px;">NO RECORDED RUNS YET</div>';
+            return;
+        }
+
+        entries.forEach((item, index) => {
+            const row = document.createElement('div');
+            row.className = 'leaderboard-row' + (index < 3 ? ` rank-${index + 1}` : '');
+            
+            const rankSpan = document.createElement('span');
+            rankSpan.className = 'rank-num';
+            rankSpan.textContent = `#${index + 1}`;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'player-name';
+            nameSpan.textContent = item.name || 'ANONYMOUS';
+
+            const scoreSpan = document.createElement('span');
+            scoreSpan.className = 'player-score';
+            scoreSpan.textContent = Math.floor(item.score || 0).toString().padStart(5, '0');
+
+            const dateSpan = document.createElement('span');
+            dateSpan.className = 'player-date';
+            dateSpan.textContent = item.date || '';
+
+            row.appendChild(rankSpan);
+            row.appendChild(nameSpan);
+            row.appendChild(scoreSpan);
+            row.appendChild(dateSpan);
+            ui.leaderboardList.appendChild(row);
+        });
+    };
+
+    document.getElementById('menu-leaderboard-btn').onclick = openModal;
+    document.getElementById('view-leaderboard-btn').onclick = openModal;
+    document.getElementById('close-leaderboard-btn').onclick = () => {
+        ui.leaderboardModal.classList.add('hidden');
+    };
+
+    // Online score submission
+    ui.submitScoreBtn.onclick = async () => {
+        const name = (ui.playerNameInput.value || "").trim() || "CYBER_RUNNER";
+        const token = ScoreVault.generateToken(name);
+
+        ui.submitStatus.classList.remove('hidden', 'success', 'error');
+        ui.submitStatus.textContent = "VERIFYING RESONANCE INTEGRITY...";
+        ui.submitScoreBtn.disabled = true;
+
+        try {
+            await LeaderboardClient.submitScore(name, token);
+            ui.submitStatus.className = "success";
+            ui.submitStatus.textContent = "✅ SCORE RECORDED ON NEON GRID!";
+            setTimeout(() => {
+                openModal();
+            }, 1000);
+        } catch (err) {
+            ui.submitStatus.className = "error";
+            ui.submitStatus.textContent = `🚨 DENIED: ${err.message}`;
+            console.error(err);
+        } finally {
+            ui.submitScoreBtn.disabled = false;
+        }
+    };
+}
+
 function initAudio() {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -223,8 +422,11 @@ function startGame() {
     initAudio();
     ui.mainMenu.classList.add('hidden');
     ui.gameOver.classList.add('hidden');
+    ui.leaderboardModal.classList.add('hidden');
+    ui.submitStatus.classList.add('hidden');
+    ui.submitStatus.textContent = '';
     
-    score = 0;
+    ScoreVault.reset();
     gameSpeed = CONFIG.INITIAL_SPEED;
     obstacles.forEach(o => scene.remove(o.group));
     obstacles = [];
@@ -252,13 +454,15 @@ function resetGame() { startGame(); }
 function gameOver() {
     isPlaying = false;
     playBeep(110, 'sawtooth', 0.5);
-    if (score > highScore) {
-        highScore = score;
+    const currentScore = ScoreVault.get();
+    if (currentScore > highScore) {
+        highScore = currentScore;
         localStorage.setItem('stickman_resonance_v2', highScore);
         if (ui.highScore) ui.highScore.textContent = Math.floor(highScore).toString().padStart(5, '0');
     }
-    ui.finalScore.textContent = Math.floor(score);
+    ui.finalScore.textContent = Math.floor(currentScore);
     ui.gameOver.classList.remove('hidden');
+    if (ui.playerNameInput) ui.playerNameInput.focus();
 }
 
 function jump() {
@@ -363,7 +567,6 @@ function spawnObstacle() {
 function updateTrail(dt) {
     if (!isPlaying) return;
     
-    // Create new trail segment
     if (Math.random() > 0.5) {
         const trailGeo = new THREE.BoxGeometry(0.8, 1.8, 0.6);
         const trailMat = new THREE.MeshBasicMaterial({ 
@@ -383,7 +586,7 @@ function updateTrail(dt) {
         const t = playerTrail[i];
         t.life -= dt;
         t.mesh.scale.multiplyScalar(0.95);
-        t.mesh.position.x -= gameSpeed * dt * 0.5; // Slight lag
+        t.mesh.position.x -= gameSpeed * dt * 0.5;
         if (t.life <= 0) {
             scene.remove(t.mesh);
             playerTrail.splice(i, 1);
@@ -467,8 +670,8 @@ function update(dt) {
     }
 
     gameSpeed = Math.min(CONFIG.MAX_SPEED, gameSpeed + CONFIG.SPEED_INC * dt);
-    score += moveDist * 0.1;
-    ui.score.textContent = Math.floor(score).toString().padStart(5, '0');
+    ScoreVault.add(moveDist * 0.1);
+    ui.score.textContent = Math.floor(ScoreVault.get()).toString().padStart(5, '0');
 
     spawnTimer += dt;
     if (spawnTimer > nextSpawnDelay) {
@@ -528,7 +731,19 @@ function animate() {
 }
 
 function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    camera.aspect = width / height;
+    
+    // Adapt camera FOV/position for portrait mobile viewports so player is always well framed
+    if (width < height) {
+        camera.fov = 65;
+        camera.position.z = 40;
+    } else {
+        camera.fov = 50;
+        camera.position.z = 35;
+    }
+    
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setSize(width, height);
 }

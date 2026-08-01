@@ -4,7 +4,12 @@
     --neon-red: #ff003c;
     --neon-blue: #00f3ff;
     --neon-gold: #ffcc00;
+    --neon-green: #00ff66;
     --dark-bg: #0a0a12;
+}
+
+* {
+    box-sizing: border-box;
 }
 
 body {
@@ -58,18 +63,20 @@ body {
 }
 
 #main-menu, #game-over {
-    background: rgba(10, 10, 20, 0.85);
-    padding: 60px 100px;
-    border-radius: 5px;
+    background: rgba(10, 10, 20, 0.88);
+    padding: 50px 70px;
+    border-radius: 8px;
     text-align: center;
     pointer-events: auto;
-    box-shadow: 0 0 40px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(0, 243, 255, 0.2);
+    box-shadow: 0 0 40px rgba(0, 0, 0, 0.9), inset 0 0 20px rgba(0, 243, 255, 0.2);
     border: 1px solid var(--neon-blue);
     backdrop-filter: blur(15px);
     position: relative;
-    clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0% 30%);
+    clip-path: polygon(8% 0, 100% 0, 100% 75%, 92% 100%, 0 100%, 0% 25%);
     max-width: 90vw;
-    box-sizing: border-box;
+    max-height: 90vh;
+    overflow-y: auto;
+    z-index: 25;
 }
 
 #main-menu::before, #game-over::before {
@@ -85,11 +92,11 @@ body {
 }
 
 h1 {
-    margin: 0 0 30px 0;
+    margin: 0 0 20px 0;
     color: #fff;
     font-family: 'Black Ops One', cursive;
-    font-size: 72px;
-    line-height: 0.9;
+    font-size: 64px;
+    line-height: 0.95;
     text-transform: uppercase;
     text-shadow: 3px 3px 0 var(--neon-red), -1px -1px 0 var(--neon-blue);
     letter-spacing: -2px;
@@ -97,36 +104,48 @@ h1 {
 
 p {
     color: #aaa;
-    font-size: 18px;
-    margin-bottom: 50px;
+    font-size: 16px;
+    margin-bottom: 30px;
     text-transform: uppercase;
     letter-spacing: 3px;
 }
 
-.controls-hint {
+.menu-buttons, .game-over-buttons {
     display: flex;
-    justify-content: center;
-    gap: 30px;
-    font-size: 12px;
-    color: #666;
-    margin-top: 30px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
+    flex-direction: column;
+    gap: 15px;
+    align-items: center;
+    width: 100%;
 }
 
 button {
     background: transparent;
     color: #fff;
     border: 2px solid var(--neon-red);
-    padding: 20px 80px;
-    font-size: 32px;
+    padding: 16px 60px;
+    font-size: 26px;
     cursor: pointer;
     font-family: 'Black Ops One', cursive;
     text-transform: uppercase;
-    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    transition: all 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
     overflow: hidden;
     outline: none;
+    width: 100%;
+    max-width: 360px;
+}
+
+button.secondary-btn {
+    border-color: var(--neon-blue);
+    font-size: 20px;
+    padding: 12px 40px;
+    color: var(--neon-blue);
+}
+
+button.secondary-btn:hover {
+    background: var(--neon-blue);
+    color: var(--dark-bg);
+    box-shadow: 0 0 25px var(--neon-blue);
 }
 
 button::after {
@@ -143,7 +162,7 @@ button::after {
 button:hover {
     background: var(--neon-red);
     box-shadow: 0 0 30px var(--neon-red);
-    transform: scale(1.05) skew(-5deg);
+    transform: scale(1.03);
 }
 
 button:hover::after {
@@ -151,7 +170,222 @@ button:hover::after {
 }
 
 button:active {
-    transform: scale(0.95);
+    transform: scale(0.96);
+}
+
+/* Online Submission Container */
+#online-submit-container {
+    background: rgba(0, 243, 255, 0.05);
+    border: 1px solid rgba(0, 243, 255, 0.3);
+    border-radius: 6px;
+    padding: 18px 20px;
+    margin: 10px auto 25px auto;
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+}
+
+.submit-header {
+    font-size: 11px;
+    color: var(--neon-blue);
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+    text-transform: uppercase;
+}
+
+.input-row {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+#player-name-input {
+    background: rgba(0, 0, 0, 0.6);
+    border: 2px solid var(--neon-blue);
+    color: #fff;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 14px;
+    padding: 10px 15px;
+    border-radius: 4px;
+    outline: none;
+    width: 65%;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    transition: 0.2s;
+}
+
+#player-name-input:focus {
+    box-shadow: 0 0 15px var(--neon-blue);
+    border-color: #fff;
+}
+
+#submit-score-btn {
+    width: 35%;
+    padding: 10px;
+    font-size: 14px;
+    border-color: var(--neon-gold);
+    color: var(--neon-gold);
+}
+
+#submit-score-btn:hover {
+    background: var(--neon-gold);
+    color: var(--dark-bg);
+    box-shadow: 0 0 20px var(--neon-gold);
+}
+
+#submit-status {
+    margin-top: 10px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+}
+
+#submit-status.success {
+    color: var(--neon-green);
+    text-shadow: 0 0 8px rgba(0, 255, 102, 0.6);
+}
+
+#submit-status.error {
+    color: var(--neon-red);
+    text-shadow: 0 0 8px rgba(255, 0, 60, 0.6);
+}
+
+/* Leaderboard Modal */
+#leaderboard-modal {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: auto;
+    z-index: 50;
+    padding: 20px;
+}
+
+.leaderboard-content {
+    background: rgba(10, 10, 22, 0.95);
+    border: 2px solid var(--neon-blue);
+    border-radius: 8px;
+    padding: 30px 40px;
+    width: 100%;
+    max-width: 550px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    box-shadow: 0 0 50px rgba(0, 243, 255, 0.3);
+}
+
+.leaderboard-content h2 {
+    font-family: 'Black Ops One', cursive;
+    font-size: 36px;
+    color: #fff;
+    margin: 0;
+    text-shadow: 2px 2px 0 var(--neon-blue);
+}
+
+.leaderboard-subtitle {
+    font-size: 12px;
+    color: var(--neon-gold);
+    letter-spacing: 3px;
+    margin-bottom: 20px;
+}
+
+#leaderboard-loading {
+    font-size: 14px;
+    color: var(--neon-blue);
+    padding: 30px 0;
+}
+
+#leaderboard-list {
+    width: 100%;
+    max-height: 50vh;
+    overflow-y: auto;
+    margin-bottom: 25px;
+    border-top: 1px solid rgba(0, 243, 255, 0.2);
+    border-bottom: 1px solid rgba(0, 243, 255, 0.2);
+}
+
+.leaderboard-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 14px;
+}
+
+.leaderboard-row:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.leaderboard-row.rank-1 {
+    color: var(--neon-gold);
+    font-weight: bold;
+    text-shadow: 0 0 10px rgba(255, 204, 0, 0.4);
+    background: rgba(255, 204, 0, 0.08);
+}
+
+.leaderboard-row.rank-2 {
+    color: #e0e0e0;
+    font-weight: bold;
+    background: rgba(224, 224, 224, 0.05);
+}
+
+.leaderboard-row.rank-3 {
+    color: #ff9933;
+    font-weight: bold;
+    background: rgba(255, 153, 51, 0.05);
+}
+
+.rank-num {
+    width: 40px;
+    text-align: left;
+    font-family: 'Black Ops One', cursive;
+}
+
+.player-name {
+    flex: 1;
+    text-align: left;
+    letter-spacing: 1px;
+}
+
+.player-score {
+    width: 100px;
+    text-align: right;
+    font-family: 'Black Ops One', cursive;
+    color: var(--neon-blue);
+}
+
+.player-date {
+    width: 80px;
+    text-align: right;
+    font-size: 10px;
+    color: #666;
+    margin-left: 10px;
+}
+
+#close-leaderboard-btn {
+    font-size: 18px;
+    padding: 12px 40px;
+    border-color: var(--neon-red);
+    width: auto;
+}
+
+.controls-hint {
+    display: flex;
+    justify-content: center;
+    gap: 30px;
+    font-size: 12px;
+    color: #666;
+    margin-top: 25px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
 }
 
 .hidden {
@@ -161,26 +395,26 @@ button:active {
 /* Mobile controls */
 #mobile-controls {
     position: absolute;
-    bottom: 40px;
+    bottom: 30px;
     width: 100%;
     pointer-events: auto;
     display: none;
     justify-content: space-between;
-    padding: 0 50px;
+    padding: 0 40px;
     box-sizing: border-box;
     z-index: 20;
 }
 
 .touch-btn {
-    width: 140px;
-    height: 140px;
+    width: 120px;
+    height: 120px;
     border-radius: 50%;
     background: rgba(0, 243, 255, 0.08);
     border: 2px solid rgba(0, 243, 255, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 20px;
+    font-size: 18px;
     font-weight: bold;
     color: var(--neon-blue);
     backdrop-filter: blur(10px);
@@ -214,29 +448,30 @@ button:active {
 /* Responsive Styles for Tablets and Mobile Devices */
 @media (max-width: 768px) {
     #main-menu, #game-over {
-        padding: 40px 30px;
+        padding: 30px 25px;
         clip-path: none;
         border-radius: 12px;
-        max-width: 90vw;
+        max-width: 92vw;
     }
 
     h1 {
-        font-size: 42px;
-        margin-bottom: 20px;
+        font-size: 38px;
+        margin-bottom: 15px;
     }
 
     p {
-        font-size: 14px;
-        margin-bottom: 30px;
+        font-size: 13px;
+        margin-bottom: 20px;
     }
 
     button {
-        padding: 15px 40px;
-        font-size: 22px;
+        padding: 14px 30px;
+        font-size: 20px;
+        max-width: 100%;
     }
 
     #score-display {
-        font-size: 42px;
+        font-size: 40px;
     }
 
     #score-container {
@@ -246,61 +481,92 @@ button:active {
 
     .controls-hint {
         flex-direction: column;
-        gap: 10px;
-        margin-top: 20px;
-        font-size: 11px;
+        gap: 8px;
+        margin-top: 15px;
+        font-size: 10px;
     }
 
     #mobile-controls {
-        bottom: 25px;
+        bottom: 20px;
         padding: 0 25px;
     }
 
     .touch-btn {
-        width: 100px;
-        height: 100px;
-        font-size: 16px;
+        width: 95px;
+        height: 95px;
+        font-size: 15px;
+    }
+
+    .leaderboard-content {
+        padding: 20px 15px;
+        max-width: 95vw;
+    }
+
+    .leaderboard-content h2 {
+        font-size: 28px;
     }
 }
 
 @media (max-width: 480px) {
     #main-menu, #game-over {
-        padding: 30px 20px;
+        padding: 25px 15px;
     }
 
     h1 {
-        font-size: 32px;
-        margin-bottom: 15px;
+        font-size: 28px;
+        margin-bottom: 10px;
     }
 
     p {
-        font-size: 12px;
-        margin-bottom: 25px;
+        font-size: 11px;
+        margin-bottom: 18px;
         letter-spacing: 1px;
     }
 
     button {
-        padding: 12px 30px;
-        font-size: 18px;
+        padding: 12px 20px;
+        font-size: 16px;
+    }
+
+    button.secondary-btn {
+        font-size: 14px;
+        padding: 10px 20px;
+    }
+
+    #online-submit-container {
+        padding: 12px 10px;
+        margin: 10px auto 15px auto;
+    }
+
+    .input-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    #player-name-input, #submit-score-btn {
         width: 100%;
     }
 
     #score-display {
-        font-size: 32px;
+        font-size: 28px;
     }
 
     #high-score-container {
-        font-size: 12px;
+        font-size: 11px;
     }
 
     #mobile-controls {
-        bottom: 20px;
+        bottom: 15px;
         padding: 0 15px;
     }
 
     .touch-btn {
-        width: 85px;
-        height: 85px;
-        font-size: 14px;
+        width: 80px;
+        height: 80px;
+        font-size: 13px;
+    }
+
+    .player-date {
+        display: none;
     }
 }
