@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-// --- DIVINE CONFIGURATION ---
+// --- DINO-STYLE DAYTIME WORLD CONFIGURATION ---
 const CONFIG = {
     GRAVITY: -80,
     JUMP_FORCE: 32,
@@ -11,58 +11,61 @@ const CONFIG = {
     MAX_SPEED: 80,
     SPEED_INC: 2.0,
     COLORS: {
-        VOID: 0x05050a,
-        NEON_BLUE: 0x00f3ff,
-        NEON_RED: 0xff003c,
-        NEON_GOLD: 0xffcc00,
-        GRID: 0x1a1a2e,
-        BUILDING: 0x0a0a12
+        SKY: 0xe8f4f8,
+        GROUND: 0xf3e5ab,
+        TRACK_LINE: 0xd4c483,
+        CACTUS: 0x27ae60,
+        CACTUS_DARK: 0x1e8449,
+        BIRD: 0xe67e22,
+        STICKMAN_SHIRT: 0x0984e3,
+        STICKMAN_PANTS: 0x2d3436,
+        STICKMAN_HEAD: 0xffdbac
     }
 };
 
-// --- ANTI-CHEAT SCORE VAULT ---
-// Encapsulates score in encrypted memory + time/distance plausibility validation
+// --- ROBUST ANTI-CHEAT SCORE VAULT (NO FLOAT XOR BUG) ---
 const ScoreVault = {
-    _raw: 0,
-    _salt: 0xdeadbeef,
-    _enc: 0,
+    _val: 0,
+    _token: '',
     _startTime: 0,
     _runId: '',
     reset() {
-        this._raw = 0;
-        this._salt = Math.floor(Math.random() * 0x7fffffff) ^ Date.now();
-        this._enc = this._raw ^ this._salt;
+        this._val = 0;
         this._startTime = Date.now();
         this._runId = Math.random().toString(36).substring(2, 10);
+        this._updateToken();
     },
     add(val) {
         if (this.verify()) {
-            this._raw += val;
-            this._enc = this._raw ^ this._salt;
+            this._val += val;
+            this._updateToken();
         }
     },
     get() {
         if (!this.verify()) return 0;
-        return Math.floor(this._raw);
+        return Math.floor(this._val);
+    },
+    _updateToken() {
+        const intVal = Math.floor(this._val * 10);
+        this._token = `sec_${intVal ^ 0x5a5a5a5a}_${this._runId}`;
     },
     verify() {
-        // 1. Check against XOR memory tampering
-        if (this._raw !== (this._enc ^ this._salt)) {
-            console.warn('SECURITY ALERT: Score memory tamper detected.');
+        const expectedInt = Math.floor(this._val * 10);
+        if (this._token !== `sec_${expectedInt ^ 0x5a5a5a5a}_${this._runId}`) {
+            console.warn("SECURITY ALERT: Score memory tamper detected.");
             return false;
         }
-        // 2. Check time vs score plausibility (max distance per sec is bounded)
         const elapsedSec = (Date.now() - this._startTime) / 1000;
-        // Max possible score is elapsedSec * 15 + 150 (generous buffer for initial speed & lag)
-        if (this._raw > (elapsedSec * 15 + 150)) {
-            console.warn('SECURITY ALERT: Impossible resonance velocity detected.');
+        // Generous plausibility ceiling: max 25 points per second + 300 base buffer
+        if (this._val > (elapsedSec * 25 + 300)) {
+            console.warn("SECURITY ALERT: Impossible velocity detected.");
             return false;
         }
         return true;
     },
     generateToken(playerName) {
         if (!this.verify()) return null;
-        const scoreVal = Math.floor(this._raw);
+        const scoreVal = Math.floor(this._val);
         const payload = `${playerName}:${scoreVal}:${this._runId}:${this._startTime}`;
         let hash = 0;
         for (let i = 0; i < payload.length; i++) {
@@ -73,7 +76,7 @@ const ScoreVault = {
     }
 };
 
-// --- ONLINE LEADERBOARD CLIENT ---
+// --- ONLINE LEADERBOARD CLIENT (WITH COOKIE & RECORD-UPDATE LOGIC) ---
 const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fbeb5-5f06-73a9-ab6e-7e94c29fe6c8";
 
 const LeaderboardClient = {
@@ -91,7 +94,6 @@ const LeaderboardClient = {
     },
 
     async submitScore(playerName, token) {
-        // Anti-cheat pre-submission check
         if (!ScoreVault.verify() || !token) {
             throw new Error("SECURITY CHECKSUM FAILED: ANOMALOUS VELOCITY");
         }
@@ -103,18 +105,36 @@ const LeaderboardClient = {
             }
             const list = data.leaderboard || [];
             
-            // Validate score value against token
             const scoreVal = ScoreVault.get();
             if (scoreVal <= 0) throw new Error("SCORE TOO LOW");
 
-            list.push({
-                name: (playerName || "ANONYMOUS").toUpperCase().substring(0, 12),
-                score: scoreVal,
-                date: new Date().toISOString().split('T')[0],
-                hash: token
-            });
+            const cleanName = (playerName || "RUNNER").toUpperCase().substring(0, 12);
+            const todayStr = new Date().toISOString().split('T')[0];
 
-            // Sort descending and keep top 25 entries
+            // Check if user already exists on the leaderboard
+            const existingIndex = list.findIndex(item => (item.name || "").toUpperCase() === cleanName);
+
+            let statusMsg = "✅ NEW SCORE RECORDED!";
+            if (existingIndex !== -1) {
+                const oldRecord = list[existingIndex].score || 0;
+                if (scoreVal > oldRecord) {
+                    list[existingIndex].score = scoreVal;
+                    list[existingIndex].date = todayStr;
+                    list[existingIndex].hash = token;
+                    statusMsg = `✅ RECORD UPDATED! (BEAT OLD ${oldRecord})`;
+                } else {
+                    statusMsg = `ℹ️ ONLINE RECORD (${oldRecord}) IS HIGHER`;
+                    return { updated: false, msg: statusMsg };
+                }
+            } else {
+                list.push({
+                    name: cleanName,
+                    score: scoreVal,
+                    date: todayStr,
+                    hash: token
+                });
+            }
+
             const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 25);
 
             const putResponse = await fetch(LEADERBOARD_API_URL, {
@@ -122,8 +142,8 @@ const LeaderboardClient = {
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ leaderboard: updatedList })
             });
-            if (!putResponse.ok) throw new Error("Failed to save to Grid");
-            return true;
+            if (!putResponse.ok) throw new Error("Failed to save to Server");
+            return { updated: true, msg: statusMsg };
         } catch (err) {
             console.error("Score submission error:", err);
             throw err;
@@ -134,14 +154,14 @@ const LeaderboardClient = {
 // --- MACHINE STATE ---
 let scene, camera, renderer, clock;
 let playerGroup, playerParts = {}, playerTrail = [];
-let obstacles = [], particles = [], backgroundBuildings = [];
+let obstacles = [], particles = [], backgroundElements = [];
 let isPlaying = false, gameSpeed = CONFIG.INITIAL_SPEED;
 
 // Physics & Input
 let velocityY = 0, jumpCount = 0, isGrounded = true, isDucking = false;
 let spawnTimer = 0, nextSpawnDelay = 1.0;
 
-// Audio (Procedural placeholders)
+// Audio
 let audioCtx, masterGain;
 
 const ui = {
@@ -162,13 +182,19 @@ const ui = {
 let highScore = localStorage.getItem('stickman_resonance_v2') || 0;
 if (ui.highScore) ui.highScore.textContent = Math.floor(highScore).toString().padStart(5, '0');
 
+// Load stored callsign/cookie
+const storedCallsign = localStorage.getItem('stickman_callsign') || "";
+if (ui.playerNameInput && storedCallsign) {
+    ui.playerNameInput.value = storedCallsign;
+}
+
 init();
 animate();
 
 function init() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(CONFIG.COLORS.VOID);
-    scene.fog = new THREE.FogExp2(CONFIG.COLORS.VOID, 0.015);
+    scene.background = new THREE.Color(CONFIG.COLORS.SKY);
+    scene.fog = new THREE.FogExp2(CONFIG.COLORS.SKY, 0.008);
 
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 8, 35);
@@ -183,15 +209,15 @@ function init() {
 
     clock = new THREE.Clock();
 
-    // Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.25);
+    // Bright Daytime Outdoor Lighting
+    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
     scene.add(ambient);
 
-    const hemi = new THREE.HemisphereLight(CONFIG.COLORS.NEON_BLUE, CONFIG.COLORS.NEON_RED, 0.6);
+    const hemi = new THREE.HemisphereLight(CONFIG.COLORS.SKY, CONFIG.COLORS.GROUND, 0.5);
     scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffffff, 1.0);
-    sun.position.set(50, 100, 50);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(40, 80, 50);
     sun.castShadow = true;
     sun.shadow.camera.left = -100;
     sun.shadow.camera.right = 100;
@@ -200,30 +226,35 @@ function init() {
     sun.shadow.mapSize.set(2048, 2048);
     scene.add(sun);
 
-    createGrid();
+    createDesertTrack();
     createPlayer();
     setupControls();
     setupLeaderboardUI();
     
     window.addEventListener('resize', onWindowResize);
-    onWindowResize(); // Apply responsive sizing immediately
+    onWindowResize();
 }
 
-function createGrid() {
+function createDesertTrack() {
+    // Ground plane (Desert sand)
     const size = 1000;
-    const divisions = 100;
-    const grid = new THREE.GridHelper(size, divisions, CONFIG.COLORS.NEON_BLUE, CONFIG.COLORS.GRID);
-    grid.position.y = CONFIG.GROUND_Y;
-    scene.add(grid);
-    scene.grid = grid;
-
     const planeGeo = new THREE.PlaneGeometry(size, size);
-    const planeMat = new THREE.MeshPhongMaterial({ color: 0x000000 });
+    const planeMat = new THREE.MeshStandardMaterial({ 
+        color: CONFIG.COLORS.GROUND,
+        roughness: 0.9,
+        metalness: 0.0
+    });
     const plane = new THREE.Mesh(planeGeo, planeMat);
     plane.rotation.x = -Math.PI / 2;
     plane.position.y = CONFIG.GROUND_Y - 0.05;
     plane.receiveShadow = true;
     scene.add(plane);
+
+    // Track markings
+    const grid = new THREE.GridHelper(size, 80, CONFIG.COLORS.TRACK_LINE, CONFIG.COLORS.TRACK_LINE);
+    grid.position.y = CONFIG.GROUND_Y;
+    scene.add(grid);
+    scene.grid = grid;
 }
 
 function createPlayer() {
@@ -231,39 +262,27 @@ function createPlayer() {
     playerGroup.position.set(CONFIG.PLAYER_X, CONFIG.GROUND_Y, 0);
     playerGroup.rotation.y = Math.PI / 2;
 
-    const mat = new THREE.MeshStandardMaterial({ 
-        color: 0x111111, 
-        roughness: 0.1, 
-        metalness: 0.8,
-        emissive: CONFIG.COLORS.NEON_BLUE,
-        emissiveIntensity: 0.2
-    });
+    const shirtMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.STICKMAN_SHIRT, roughness: 0.5 });
+    const pantsMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.STICKMAN_PANTS, roughness: 0.7 });
+    const headMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.STICKMAN_HEAD, roughness: 0.4 });
 
-    const glowMat = new THREE.MeshBasicMaterial({ color: CONFIG.COLORS.NEON_BLUE });
-
-    // Torso
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.6), mat);
+    // Torso (Shirt)
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 1.8, 0.6), shirtMat);
     torso.position.y = 2.5;
     torso.castShadow = true;
     playerGroup.add(torso);
     playerParts.torso = torso;
 
     // Head
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.8), mat);
-    head.position.y = 3.8;
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.85), headMat);
+    head.position.y = 3.9;
     head.castShadow = true;
     playerGroup.add(head);
     playerParts.head = head;
 
-    // Visor
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.2, 0.85), glowMat);
-    visor.position.y = 3.9;
-    playerGroup.add(visor);
-    playerParts.visor = visor;
-
     const createLimb = (x, y, isArm) => {
         const w = 0.35, h = isArm ? 1.4 : 1.8, d = 0.35;
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), isArm ? shirtMat : pantsMat);
         mesh.position.y = -h/2;
         mesh.castShadow = true;
         const pivot = new THREE.Group();
@@ -287,7 +306,6 @@ function setupControls() {
             e.preventDefault();
         }
         if (!isPlaying && (e.code === 'Space' || e.code === 'Enter')) {
-            // Do not start game if modal is open or input is focused
             if (ui.leaderboardModal.classList.contains('hidden') && document.activeElement !== ui.playerNameInput) {
                 startGame();
             }
@@ -326,13 +344,13 @@ function setupLeaderboardUI() {
         ui.leaderboardModal.classList.remove('hidden');
         ui.leaderboardList.innerHTML = '';
         ui.leaderboardLoading.classList.remove('hidden');
-        ui.leaderboardLoading.textContent = "CONNECTING TO NEON GRID...";
+        ui.leaderboardLoading.textContent = "LOADING RUNNERS...";
 
         const entries = await LeaderboardClient.fetchLeaderboard();
         ui.leaderboardLoading.classList.add('hidden');
 
         if (entries.length === 0) {
-            ui.leaderboardList.innerHTML = '<div style="color: #666; padding: 20px;">NO RECORDED RUNS YET</div>';
+            ui.leaderboardList.innerHTML = '<div style="color: #636e72; padding: 20px;">NO RECORDED RUNS YET</div>';
             return;
         }
 
@@ -346,7 +364,7 @@ function setupLeaderboardUI() {
 
             const nameSpan = document.createElement('span');
             nameSpan.className = 'player-name';
-            nameSpan.textContent = item.name || 'ANONYMOUS';
+            nameSpan.textContent = item.name || 'RUNNER';
 
             const scoreSpan = document.createElement('span');
             scoreSpan.className = 'player-score';
@@ -370,19 +388,19 @@ function setupLeaderboardUI() {
         ui.leaderboardModal.classList.add('hidden');
     };
 
-    // Online score submission
     ui.submitScoreBtn.onclick = async () => {
-        const name = (ui.playerNameInput.value || "").trim() || "CYBER_RUNNER";
-        const token = ScoreVault.generateToken(name);
+        const name = (ui.playerNameInput.value || "").trim() || "RUNNER";
+        localStorage.setItem('stickman_callsign', name);
 
+        const token = ScoreVault.generateToken(name);
         ui.submitStatus.classList.remove('hidden', 'success', 'error');
-        ui.submitStatus.textContent = "VERIFYING RESONANCE INTEGRITY...";
+        ui.submitStatus.textContent = "SAVING TO LEADERBOARD...";
         ui.submitScoreBtn.disabled = true;
 
         try {
-            await LeaderboardClient.submitScore(name, token);
+            const res = await LeaderboardClient.submitScore(name, token);
             ui.submitStatus.className = "success";
-            ui.submitStatus.textContent = "✅ SCORE RECORDED ON NEON GRID!";
+            ui.submitStatus.textContent = res.msg || "✅ SCORE SAVED!";
             setTimeout(() => {
                 openModal();
             }, 1000);
@@ -410,7 +428,7 @@ function playBeep(freq, type, duration) {
     const g = audioCtx.createGain();
     osc.type = type;
     osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    g.gain.setValueAtTime(0.2, audioCtx.currentTime);
+    g.gain.setValueAtTime(0.25, audioCtx.currentTime);
     g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
     osc.connect(g);
     g.connect(masterGain);
@@ -431,9 +449,9 @@ function startGame() {
     obstacles.forEach(o => scene.remove(o.group));
     obstacles = [];
     
-    backgroundBuildings.forEach(b => scene.remove(b));
-    backgroundBuildings = [];
-    for(let i=0; i<40; i++) spawnBackgroundBuilding(i * 20 - 100);
+    backgroundElements.forEach(b => scene.remove(b));
+    backgroundElements = [];
+    for(let i=0; i<30; i++) spawnBackgroundScenery(i * 30 - 100);
 
     playerGroup.position.y = CONFIG.GROUND_Y;
     velocityY = 0;
@@ -445,15 +463,15 @@ function startGame() {
     isPlaying = true;
     clock.start();
     
-    playBeep(440, 'square', 0.1);
-    setTimeout(() => playBeep(880, 'square', 0.2), 100);
+    playBeep(520, 'square', 0.1);
+    setTimeout(() => playBeep(780, 'square', 0.15), 100);
 }
 
 function resetGame() { startGame(); }
 
 function gameOver() {
     isPlaying = false;
-    playBeep(110, 'sawtooth', 0.5);
+    playBeep(180, 'sawtooth', 0.4);
     const currentScore = ScoreVault.get();
     if (currentScore > highScore) {
         highScore = currentScore;
@@ -470,27 +488,27 @@ function jump() {
         velocityY = CONFIG.JUMP_FORCE;
         isGrounded = false;
         jumpCount = 1;
-        createImpact(playerGroup.position.x, CONFIG.GROUND_Y, CONFIG.COLORS.NEON_BLUE);
-        playBeep(600, 'sine', 0.1);
+        createImpact(playerGroup.position.x, CONFIG.GROUND_Y, 0xbdc3c7);
+        playBeep(640, 'sine', 0.1);
     } else if (jumpCount < 2) {
         velocityY = CONFIG.JUMP_FORCE * CONFIG.DOUBLE_JUMP_MULT;
         jumpCount = 2;
-        createImpact(playerGroup.position.x, playerGroup.position.y, CONFIG.COLORS.NEON_GOLD);
-        playBeep(900, 'sine', 0.1);
+        createImpact(playerGroup.position.x, playerGroup.position.y, 0x0984e3);
+        playBeep(880, 'sine', 0.1);
     }
 }
 
 function startDuck() {
     if (!isDucking) {
         isDucking = true;
-        if (isGrounded) playBeep(300, 'sine', 0.1);
+        if (isGrounded) playBeep(350, 'sine', 0.08);
     }
 }
 
 function endDuck() { isDucking = false; }
 
 function createImpact(x, y, color) {
-    for(let i=0; i<12; i++) {
+    for(let i=0; i<10; i++) {
         const p = new THREE.Mesh(
             new THREE.BoxGeometry(0.3, 0.3, 0.3),
             new THREE.MeshBasicMaterial({ color: color })
@@ -500,64 +518,72 @@ function createImpact(x, y, color) {
         particles.push({
             mesh: p,
             life: 1.0,
-            vel: new THREE.Vector3((Math.random()-0.5)*15, Math.random()*15, (Math.random()-0.5)*10)
+            vel: new THREE.Vector3((Math.random()-0.5)*12, Math.random()*12, (Math.random()-0.5)*8)
         });
     }
 }
 
-function spawnBackgroundBuilding(x) {
-    const h = 15 + Math.random() * 50;
-    const w = 8 + Math.random() * 12;
-    const d = 10 + Math.random() * 15;
-    
-    const geo = new THREE.BoxGeometry(w, h, d);
-    const mat = new THREE.MeshStandardMaterial({ 
-        color: CONFIG.COLORS.BUILDING,
-        emissive: Math.random() > 0.7 ? CONFIG.COLORS.NEON_BLUE : CONFIG.COLORS.NEON_RED,
-        emissiveIntensity: 0.1
-    });
-    const b = new THREE.Mesh(geo, mat);
-    b.position.set(x, h/2 + CONFIG.GROUND_Y, -40 - Math.random() * 30);
-    scene.add(b);
-    backgroundBuildings.push(b);
+// 3D Desert Rocks/Clouds/Hills in the background
+function spawnBackgroundScenery(x) {
+    const isCloud = Math.random() > 0.5;
+    if (isCloud) {
+        // Bright Cloud
+        const w = 12 + Math.random() * 15;
+        const geo = new THREE.BoxGeometry(w, 4, 6);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 });
+        const c = new THREE.Mesh(geo, mat);
+        c.position.set(x, 18 + Math.random() * 15, -45 - Math.random() * 20);
+        scene.add(c);
+        backgroundElements.push(c);
+    } else {
+        // Distant Desert Mesa/Rock
+        const h = 10 + Math.random() * 25;
+        const w = 15 + Math.random() * 20;
+        const geo = new THREE.BoxGeometry(w, h, 12);
+        const mat = new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.9 });
+        const rock = new THREE.Mesh(geo, mat);
+        rock.position.set(x, h/2 + CONFIG.GROUND_Y, -50 - Math.random() * 20);
+        scene.add(rock);
+        backgroundElements.push(rock);
+    }
 }
 
+// Dino-Style Obstacles: Cacti (Ground) & Flying Birds (Air)
 function spawnObstacle() {
     const group = new THREE.Group();
     group.position.set(120, CONFIG.GROUND_Y, 0);
     
-    const isAir = Math.random() > 0.6;
+    const isAir = Math.random() > 0.65;
     let collider;
 
     if (isAir) {
-        // High laser barrier
-        const geo = new THREE.BoxGeometry(1, 1, 15);
-        const mat = new THREE.MeshBasicMaterial({ color: CONFIG.COLORS.NEON_RED });
-        const laser = new THREE.Mesh(geo, mat);
-        laser.position.y = 5.5;
-        group.add(laser);
+        // 3D Flying Bird / Pterodactyl (requires ducking)
+        const wingSpan = 3.5;
+        const geo = new THREE.BoxGeometry(wingSpan, 0.6, 1.2);
+        const mat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BIRD, roughness: 0.6 });
+        const bird = new THREE.Mesh(geo, mat);
+        bird.position.y = 5.2;
+        bird.castShadow = true;
+        group.add(bird);
         
-        const glow = new THREE.PointLight(CONFIG.COLORS.NEON_RED, 20, 20);
-        glow.position.y = 5.5;
-        group.add(glow);
-        
-        collider = { type: 'duck', x: 120, w: 2, yLow: 5.0 };
+        collider = { type: 'duck', x: 120, w: wingSpan, yLow: 4.8 };
     } else {
-        // Ground spike/block
-        const h = 2 + Math.random() * 3;
-        const w = 2 + Math.random() * 2;
-        const geo = new THREE.BoxGeometry(w, h, 4);
-        const mat = new THREE.MeshStandardMaterial({ 
-            color: 0x222222, 
-            emissive: CONFIG.COLORS.NEON_RED,
-            emissiveIntensity: 0.5
-        });
-        const block = new THREE.Mesh(geo, mat);
-        block.position.y = h/2;
-        block.castShadow = true;
-        group.add(block);
+        // 3D Cactus or Cactus Cluster (like Chrome Dino!)
+        const count = Math.floor(Math.random() * 3) + 1; // 1 to 3 cacti
+        const mat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS, roughness: 0.8 });
+        let totalWidth = count * 1.5;
+        let maxH = 2.5;
+
+        for (let i = 0; i < count; i++) {
+            const h = 2.8 + Math.random() * 1.8;
+            if (h > maxH) maxH = h;
+            const cactus = new THREE.Mesh(new THREE.BoxGeometry(1.2, h, 1.2), mat);
+            cactus.position.set((i - (count-1)/2) * 1.4, h/2, 0);
+            cactus.castShadow = true;
+            group.add(cactus);
+        }
         
-        collider = { type: 'jump', x: 120, w: w, h: h };
+        collider = { type: 'jump', x: 120, w: totalWidth, h: maxH };
     }
 
     scene.add(group);
@@ -567,26 +593,26 @@ function spawnObstacle() {
 function updateTrail(dt) {
     if (!isPlaying) return;
     
-    if (Math.random() > 0.5) {
+    if (Math.random() > 0.6) {
         const trailGeo = new THREE.BoxGeometry(0.8, 1.8, 0.6);
         const trailMat = new THREE.MeshBasicMaterial({ 
-            color: CONFIG.COLORS.NEON_BLUE, 
+            color: CONFIG.COLORS.STICKMAN_SHIRT, 
             transparent: true, 
-            opacity: 0.2 
+            opacity: 0.25 
         });
         const segment = new THREE.Mesh(trailGeo, trailMat);
         segment.position.copy(playerGroup.position);
-        segment.position.y += 2.5; // Torso height
+        segment.position.y += 2.5;
         segment.rotation.copy(playerGroup.rotation);
         scene.add(segment);
-        playerTrail.push({ mesh: segment, life: 0.5 });
+        playerTrail.push({ mesh: segment, life: 0.3 });
     }
 
     for (let i = playerTrail.length - 1; i >= 0; i--) {
         const t = playerTrail[i];
         t.life -= dt;
-        t.mesh.scale.multiplyScalar(0.95);
-        t.mesh.position.x -= gameSpeed * dt * 0.5;
+        t.mesh.scale.multiplyScalar(0.9);
+        t.mesh.position.x -= gameSpeed * dt * 0.4;
         if (t.life <= 0) {
             scene.remove(t.mesh);
             playerTrail.splice(i, 1);
@@ -594,24 +620,10 @@ function updateTrail(dt) {
     }
 }
 
-let musicTimer = 0;
-function updateMusic(dt) {
-    if (!isPlaying) return;
-    musicTimer += dt * (gameSpeed / 30);
-    if (musicTimer > 0.5) {
-        musicTimer = 0;
-        playBeep(110, 'sawtooth', 0.1); // Bass pulse
-        if (Math.random() > 0.7) playBeep(220, 'square', 0.05); // Snare-like
-    }
-}
-
 function update(dt) {
     if (!isPlaying) return;
     updateTrail(dt);
-    updateMusic(dt);
-    if (!isPlaying) return;
 
-    // Physics
     if (!isGrounded) {
         velocityY += CONFIG.GRAVITY * dt;
         playerGroup.position.y += velocityY * dt;
@@ -620,16 +632,16 @@ function update(dt) {
             velocityY = 0;
             isGrounded = true;
             jumpCount = 0;
-            playBeep(200, 'sine', 0.05);
+            playBeep(240, 'sine', 0.05);
         }
     }
 
     const moveDist = gameSpeed * dt;
     scene.grid.position.x = (scene.grid.position.x - moveDist) % 10;
 
-    backgroundBuildings.forEach(b => {
+    backgroundElements.forEach(b => {
         b.position.x -= moveDist * 0.3;
-        if (b.position.x < -100) b.position.x += 800;
+        if (b.position.x < -120) b.position.x += 800;
     });
 
     for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -643,9 +655,9 @@ function update(dt) {
             continue;
         }
 
-        // Collision Check
+        // Accurate Collision Check
         const dx = Math.abs(playerGroup.position.x - o.collider.x);
-        if (dx < (o.collider.w / 2 + 0.5)) {
+        if (dx < (o.collider.w / 2 + 0.45)) {
             const py = playerGroup.position.y - CONFIG.GROUND_Y;
             if (o.collider.type === 'jump') {
                 if (py < o.collider.h - 0.2) gameOver();
@@ -656,7 +668,6 @@ function update(dt) {
         }
     }
 
-    // Particles
     for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
         p.life -= dt * 1.5;
@@ -677,7 +688,7 @@ function update(dt) {
     if (spawnTimer > nextSpawnDelay) {
         spawnObstacle();
         spawnTimer = 0;
-        nextSpawnDelay = Math.max(0.8, 2.5 - (gameSpeed / 40));
+        nextSpawnDelay = Math.max(0.7, 2.3 - (gameSpeed / 45));
     }
 }
 
@@ -688,25 +699,20 @@ function animate() {
 
     update(dt);
 
-    // Dynamic Animations
     if (isPlaying) {
         const s = t * (gameSpeed * 0.5);
         if (isGrounded) {
             if (isDucking) {
-                // Slide Pose
                 playerParts.torso.position.y = 1.2;
                 playerParts.head.position.y = 2.2;
-                playerParts.visor.position.y = 2.3;
                 playerParts.lLeg.rotation.x = -Math.PI/2.2;
                 playerParts.rLeg.rotation.x = -Math.PI/2.5;
                 playerParts.lArm.rotation.x = Math.PI/4;
                 playerParts.rArm.rotation.x = Math.PI/4;
                 playerGroup.rotation.z = 0.1;
             } else {
-                // Run Cycle
                 playerParts.torso.position.y = 2.5 + Math.sin(s*2) * 0.1;
-                playerParts.head.position.y = 3.8 + Math.sin(s*2) * 0.15;
-                playerParts.visor.position.y = 3.9 + Math.sin(s*2) * 0.15;
+                playerParts.head.position.y = 3.9 + Math.sin(s*2) * 0.15;
                 playerParts.lLeg.rotation.x = Math.sin(s) * 1.2;
                 playerParts.rLeg.rotation.x = Math.sin(s + Math.PI) * 1.2;
                 playerParts.lArm.rotation.x = Math.sin(s + Math.PI) * 1.0;
@@ -714,7 +720,6 @@ function animate() {
                 playerGroup.rotation.z = 0;
             }
         } else {
-            // Air / Jump
             playerParts.lLeg.rotation.x = -0.5;
             playerParts.rLeg.rotation.x = 0.2;
             playerParts.lArm.rotation.x = -2.0;
@@ -722,9 +727,8 @@ function animate() {
             playerGroup.rotation.z = velocityY * 0.01;
         }
         
-        // Dynamic Camera Tilt
-        camera.rotation.z = Math.sin(t * 0.5) * 0.02;
-        camera.position.y = 8 + Math.sin(t) * 0.5;
+        camera.rotation.z = Math.sin(t * 0.5) * 0.015;
+        camera.position.y = 8 + Math.sin(t) * 0.3;
     }
 
     renderer.render(scene, camera);
@@ -735,7 +739,6 @@ function onWindowResize() {
     const height = window.innerHeight;
     camera.aspect = width / height;
     
-    // Adapt camera FOV/position for portrait mobile viewports so player is always well framed
     if (width < height) {
         camera.fov = 65;
         camera.position.z = 40;
