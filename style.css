@@ -14,6 +14,7 @@ body {
     font-family: 'Orbitron', sans-serif;
     user-select: none;
     color: #fff;
+    -webkit-tap-highlight-color: transparent;
 }
 
 #ui-layer {
@@ -38,6 +39,7 @@ body {
     flex-direction: column;
     align-items: flex-end;
     filter: drop-shadow(0 0 10px rgba(0, 243, 255, 0.5));
+    z-index: 10;
 }
 
 #high-score-container {
@@ -66,6 +68,8 @@ body {
     backdrop-filter: blur(15px);
     position: relative;
     clip-path: polygon(10% 0, 100% 0, 100% 70%, 90% 100%, 0 100%, 0% 30%);
+    max-width: 90vw;
+    box-sizing: border-box;
 }
 
 #main-menu::before, #game-over::before {
@@ -122,6 +126,7 @@ button {
     transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
     position: relative;
     overflow: hidden;
+    outline: none;
 }
 
 button::after {
@@ -163,29 +168,34 @@ button:active {
     justify-content: space-between;
     padding: 0 50px;
     box-sizing: border-box;
+    z-index: 20;
 }
 
 .touch-btn {
     width: 140px;
     height: 140px;
     border-radius: 50%;
-    background: rgba(0, 243, 255, 0.05);
-    border: 2px solid rgba(0, 243, 255, 0.3);
+    background: rgba(0, 243, 255, 0.08);
+    border: 2px solid rgba(0, 243, 255, 0.4);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: bold;
     color: var(--neon-blue);
     backdrop-filter: blur(10px);
-    box-shadow: 0 0 20px rgba(0, 243, 255, 0.1);
-    transition: 0.2s;
+    box-shadow: 0 0 20px rgba(0, 243, 255, 0.15);
+    transition: 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: 0;
 }
 
 .touch-btn:active {
-    background: rgba(0, 243, 255, 0.2);
-    transform: scale(0.9);
+    background: rgba(0, 243, 255, 0.25);
+    transform: scale(0.92);
     box-shadow: 0 0 40px var(--neon-blue);
+    border-color: var(--neon-blue);
 }
 
 @keyframes glitch {
@@ -199,4 +209,98 @@ button:active {
 
 .glitch-text:hover {
     animation: glitch 0.3s linear infinite;
+}
+
+/* Responsive Styles for Tablets and Mobile Devices */
+@media (max-width: 768px) {
+    #main-menu, #game-over {
+        padding: 40px 30px;
+        clip-path: none;
+        border-radius: 12px;
+        max-width: 90vw;
+    }
+
+    h1 {
+        font-size: 42px;
+        margin-bottom: 20px;
+    }
+
+    p {
+        font-size: 14px;
+        margin-bottom: 30px;
+    }
+
+    button {
+        padding: 15px 40px;
+        font-size: 22px;
+    }
+
+    #score-display {
+        font-size: 42px;
+    }
+
+    #score-container {
+        top: 15px;
+        right: 15px;
+    }
+
+    .controls-hint {
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 20px;
+        font-size: 11px;
+    }
+
+    #mobile-controls {
+        bottom: 25px;
+        padding: 0 25px;
+    }
+
+    .touch-btn {
+        width: 100px;
+        height: 100px;
+        font-size: 16px;
+    }
+}
+
+@media (max-width: 480px) {
+    #main-menu, #game-over {
+        padding: 30px 20px;
+    }
+
+    h1 {
+        font-size: 32px;
+        margin-bottom: 15px;
+    }
+
+    p {
+        font-size: 12px;
+        margin-bottom: 25px;
+        letter-spacing: 1px;
+    }
+
+    button {
+        padding: 12px 30px;
+        font-size: 18px;
+        width: 100%;
+    }
+
+    #score-display {
+        font-size: 32px;
+    }
+
+    #high-score-container {
+        font-size: 12px;
+    }
+
+    #mobile-controls {
+        bottom: 20px;
+        padding: 0 15px;
+    }
+
+    .touch-btn {
+        width: 85px;
+        height: 85px;
+        font-size: 14px;
+    }
 }

@@ -164,6 +164,9 @@ function createPlayer() {
 
 function setupControls() {
     document.addEventListener('keydown', (e) => {
+        if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
+            e.preventDefault();
+        }
         if (!isPlaying && (e.code === 'Space' || e.code === 'Enter')) startGame();
         if (isPlaying) {
             if (e.code === 'Space' || e.code === 'ArrowUp') jump();
@@ -177,11 +180,20 @@ function setupControls() {
     document.getElementById('start-btn').onclick = startGame;
     document.getElementById('restart-btn').onclick = resetGame;
 
-    if ('ontouchstart' in window) {
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
         ui.mobile.style.display = 'flex';
-        document.getElementById('btn-jump').ontouchstart = (e) => { e.preventDefault(); jump(); };
-        document.getElementById('btn-duck').ontouchstart = (e) => { e.preventDefault(); startDuck(); };
-        document.getElementById('btn-duck').ontouchend = (e) => { e.preventDefault(); endDuck(); };
+        const btnJump = document.getElementById('btn-jump');
+        const btnDuck = document.getElementById('btn-duck');
+        if (btnJump) {
+            btnJump.addEventListener('touchstart', (e) => { e.preventDefault(); jump(); }, { passive: false });
+            btnJump.addEventListener('pointerdown', (e) => { e.preventDefault(); jump(); });
+        }
+        if (btnDuck) {
+            btnDuck.addEventListener('touchstart', (e) => { e.preventDefault(); startDuck(); }, { passive: false });
+            btnDuck.addEventListener('touchend', (e) => { e.preventDefault(); endDuck(); }, { passive: false });
+            btnDuck.addEventListener('pointerdown', (e) => { e.preventDefault(); startDuck(); });
+            btnDuck.addEventListener('pointerup', (e) => { e.preventDefault(); endDuck(); });
+        }
     }
 }
 
