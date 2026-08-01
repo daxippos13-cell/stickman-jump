@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Stickman City Runner 3D</title>
-  <script type="module" crossorigin src="./assets/index-DkWmNeaw.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-1cKNTF3H.css">
+    <title>3D Stickman Runner - Dino Style</title>
+    <!-- SVG Favicon to prevent 404 errors -->
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2220%22 r=%2212%22 fill=%22%232d3436%22/><path d=%22M50 32 L50 65 M30 45 L70 45 M50 65 L32 90 M50 65 L68 90%22 stroke=%22%232d3436%22 stroke-width=%228%22 stroke-linecap=%22round%22/></svg>">
+  <script type="module" crossorigin src="./assets/index-MotDdyL5.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-B_NetWKR.css">
 </head>
 <body>
     <div id="ui-layer">
@@ -20,49 +22,49 @@
         </div>
         
         <div id="main-menu">
-            <h1 class="glitch-text">STICKMAN<br>CITY RUNNER</h1>
-            <p>Master the Machine. Run the Grid.</p>
+            <h1>STICKMAN<br>RUNNER 3D</h1>
+            <p>Dino-Style Endless 3D Parkour</p>
             <div class="menu-buttons">
-                <button id="start-btn">INITIATE RUN</button>
+                <button id="start-btn">START RUNNING</button>
                 <button id="menu-leaderboard-btn" class="secondary-btn">🏆 LEADERBOARD</button>
             </div>
             <div class="controls-hint">
-                <span>[SPACE] Jump / Double Jump</span>
-                <span>[DOWN] Phase Slide</span>
+                <span>[SPACE / UP] Jump & Double Jump</span>
+                <span>[DOWN] Duck / Slide</span>
             </div>
         </div>
 
         <div id="game-over" class="hidden">
-            <h1 class="glitch-text">SYSTEM FAILURE</h1>
-            <p>Resonance distance: <span id="final-score">0</span>nm</p>
+            <h1>GAME OVER</h1>
+            <p>Distance Run: <span id="final-score">0</span>m</p>
             
             <div id="online-submit-container">
-                <div class="submit-header">RECORD SCORE TO NEON GRID</div>
+                <div class="submit-header">RECORD SCORE TO GLOBAL LEADERBOARD</div>
                 <div class="input-row">
-                    <input type="text" id="player-name-input" placeholder="CALLSIGN (MAX 12)" maxlength="12" autocomplete="off" spellcheck="false">
-                    <button id="submit-score-btn">SUBMIT</button>
+                    <input type="text" id="player-name-input" placeholder="YOUR NAME" maxlength="12" autocomplete="off" spellcheck="false">
+                    <button id="submit-score-btn">SAVE SCORE</button>
                 </div>
                 <div id="submit-status" class="hidden"></div>
             </div>
 
             <div class="game-over-buttons">
-                <button id="restart-btn">REBOOT SYSTEM</button>
+                <button id="restart-btn">PLAY AGAIN</button>
                 <button id="view-leaderboard-btn" class="secondary-btn">🏆 LEADERBOARD</button>
             </div>
         </div>
 
         <div id="leaderboard-modal" class="hidden">
             <div class="leaderboard-content">
-                <h2 class="glitch-text">GLOBAL LEADERBOARD</h2>
-                <div class="leaderboard-subtitle">TOP CYBER RUNNERS</div>
-                <div id="leaderboard-loading">CONNECTING TO NEON GRID...</div>
+                <h2>GLOBAL LEADERBOARD</h2>
+                <div class="leaderboard-subtitle">TOP RUNNERS WORLDWIDE</div>
+                <div id="leaderboard-loading">LOADING RUNNERS...</div>
                 <div id="leaderboard-list"></div>
                 <button id="close-leaderboard-btn">CLOSE</button>
             </div>
         </div>
         
         <div id="mobile-controls">
-            <button class="touch-btn" id="btn-duck">SLIDE</button>
+            <button class="touch-btn" id="btn-duck">DUCK</button>
             <button class="touch-btn" id="btn-jump">JUMP</button>
         </div>
     </div>
