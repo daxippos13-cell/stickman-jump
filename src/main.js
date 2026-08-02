@@ -438,10 +438,31 @@ function createDesertTrack() {
     plane.receiveShadow = true;
     scene.add(plane);
 
-    const grid = new THREE.GridHelper(size, 80, CONFIG.COLORS.TRACK_LINE, CONFIG.COLORS.TRACK_LINE);
-    grid.position.y = CONFIG.GROUND_Y;
-    scene.add(grid);
-    scene.grid = grid;
+    // Clean track group without crossing grid lines (eliminates black stripe moiré artifacts)
+    const trackGroup = new THREE.Group();
+    trackGroup.position.y = CONFIG.GROUND_Y;
+    
+    // Side road borders (left & right of running lane)
+    const borderGeo = new THREE.BoxGeometry(size, 0.04, 0.15);
+    const borderMat = new THREE.MeshBasicMaterial({ color: 0xd4c483 });
+    const leftBorder = new THREE.Mesh(borderGeo, borderMat);
+    leftBorder.position.set(0, 0, -2.2);
+    trackGroup.add(leftBorder);
+    
+    const rightBorder = new THREE.Mesh(borderGeo, borderMat);
+    rightBorder.position.set(0, 0, 2.2);
+    trackGroup.add(rightBorder);
+
+    // Dashed center lane markings that scroll smoothly
+    const dashMat = new THREE.MeshBasicMaterial({ color: 0xe6dfba });
+    for (let x = -500; x < 500; x += 10) {
+        const dash = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.04, 0.12), dashMat);
+        dash.position.set(x, 0, 0);
+        trackGroup.add(dash);
+    }
+
+    scene.add(trackGroup);
+    scene.grid = trackGroup;
 }
 
 function createPlayer() {
@@ -810,25 +831,89 @@ function createImpact(x, y, color) {
     }
 }
 
+// --- DINO-STYLE DAYTIME BACKGROUND SCENERY (NO PLAIN BOXES / NO STRIPES) ---
+function createCloudMesh() {
+    const group = new THREE.Group();
+    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 });
+    const count = 3 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < count; i++) {
+        const cw = 4 + Math.random() * 5;
+        const ch = 2.5 + Math.random() * 2;
+        const puff = new THREE.Mesh(new THREE.BoxGeometry(cw, ch, cw * 0.8), mat);
+        puff.position.set((i - (count - 1) / 2) * 3, Math.random() * 1.5, Math.random() * 2);
+        group.add(puff);
+    }
+    return group;
+}
+
+function createMesaMesh(w, h) {
+    const group = new THREE.Group();
+    const colors = [0xe17055, 0xd4a373, 0xcc8e5e];
+    const layers = 3;
+    let currY = 0;
+    for (let l = 0; l < layers; l++) {
+        const lh = (h / layers) * (1.2 - l * 0.2);
+        const lw = w * (1.0 - l * 0.25);
+        const ld = lw * 0.7;
+        const mat = new THREE.MeshStandardMaterial({ 
+            color: colors[l % colors.length], 
+            roughness: 0.9 
+        });
+        const layerMesh = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), mat);
+        layerMesh.position.set(0, currY + lh / 2, 0);
+        currY += lh;
+        group.add(layerMesh);
+    }
+    return group;
+}
+
+function createDesertBuildingMesh(w, h) {
+    const group = new THREE.Group();
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0xffeaa7, roughness: 0.8 });
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0xdfe6e9, roughness: 0.7 });
+    const winMat = new THREE.MeshBasicMaterial({ color: 0x74b9ff });
+
+    const mainBlock = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.8), baseMat);
+    mainBlock.position.y = h / 2;
+    group.add(mainBlock);
+
+    const topW = w * 0.6;
+    const topH = h * 0.25;
+    const topBlock = new THREE.Mesh(new THREE.BoxGeometry(topW, topH, topW), roofMat);
+    topBlock.position.set(0, h + topH / 2, 0);
+    group.add(topBlock);
+
+    const winRows = Math.floor(h / 5);
+    for (let r = 0; r < winRows; r++) {
+        const win = new THREE.Mesh(new THREE.BoxGeometry(w * 0.15, 1.2, w * 0.82), winMat);
+        win.position.set(w * 0.25, 4 + r * 4, 0);
+        group.add(win);
+    }
+
+    return group;
+}
+
 function spawnBackgroundScenery(x) {
-    const isCloud = Math.random() > 0.5;
-    if (isCloud) {
-        const w = 12 + Math.random() * 15;
-        const geo = new THREE.BoxGeometry(w, 4, 6);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 });
-        const c = new THREE.Mesh(geo, mat);
-        c.position.set(x, 18 + Math.random() * 15, -45 - Math.random() * 20);
-        scene.add(c);
-        backgroundElements.push(c);
+    const type = Math.random();
+    if (type < 0.4) {
+        const cloud = createCloudMesh();
+        cloud.position.set(x, 22 + Math.random() * 15, -45 - Math.random() * 25);
+        scene.add(cloud);
+        backgroundElements.push(cloud);
+    } else if (type < 0.75) {
+        const h = 18 + Math.random() * 20;
+        const w = 18 + Math.random() * 15;
+        const mesa = createMesaMesh(w, h);
+        mesa.position.set(x, CONFIG.GROUND_Y, -55 - Math.random() * 20);
+        scene.add(mesa);
+        backgroundElements.push(mesa);
     } else {
-        const h = 10 + Math.random() * 25;
-        const w = 15 + Math.random() * 20;
-        const geo = new THREE.BoxGeometry(w, h, 12);
-        const mat = new THREE.MeshStandardMaterial({ color: 0xd4a373, roughness: 0.9 });
-        const rock = new THREE.Mesh(geo, mat);
-        rock.position.set(x, h/2 + CONFIG.GROUND_Y, -50 - Math.random() * 20);
-        scene.add(rock);
-        backgroundElements.push(rock);
+        const h = 15 + Math.random() * 18;
+        const w = 12 + Math.random() * 10;
+        const building = createDesertBuildingMesh(w, h);
+        building.position.set(x, CONFIG.GROUND_Y, -50 - Math.random() * 15);
+        scene.add(building);
+        backgroundElements.push(building);
     }
 }
 
