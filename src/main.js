@@ -262,6 +262,74 @@ const LeaderboardClient = {
         } catch (err) {
             throw err;
         }
+    },
+
+    // Admin Tool: Remove all fake/seed bot accounts
+    async removeAllBots() {
+        const BOT_NAMES = ["NEON_PHANTOM", "GRID_RUNNER", "CYBER_NINJA", "SYNTH_WAVE", "ZERO_COOL"];
+        try {
+            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store", headers: { "Accept": "application/json" } });
+            let res = { data: { leaderboard: [] } };
+            if (response.ok) res = await response.json();
+            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const cleanList = list.filter(item => 
+                item.hash !== "seed" && 
+                !BOT_NAMES.includes((item.name || "").toUpperCase())
+            );
+            await fetch(LEADERBOARD_API_URL, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body: JSON.stringify({
+                    name: "Stickman Leaderboard",
+                    data: { leaderboard: cleanList }
+                })
+            });
+            return cleanList;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    // Admin Tool: Delete a specific player by UUID or Name
+    async deleteScore(targetId) {
+        try {
+            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store", headers: { "Accept": "application/json" } });
+            let res = { data: { leaderboard: [] } };
+            if (response.ok) res = await response.json();
+            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const cleanList = list.filter(item => 
+                item.uuid !== targetId && 
+                (item.name || "").toUpperCase() !== (targetId || "").toUpperCase()
+            );
+            await fetch(LEADERBOARD_API_URL, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body: JSON.stringify({
+                    name: "Stickman Leaderboard",
+                    data: { leaderboard: cleanList }
+                })
+            });
+            return cleanList;
+        } catch (err) {
+            throw err;
+        }
+    },
+
+    // Admin Tool: Wipe the entire leaderboard clean
+    async wipeLeaderboard() {
+        try {
+            await fetch(LEADERBOARD_API_URL, {
+                method: "PUT",
+                headers: { "Content-Type": "application/json", "Accept": "application/json" },
+                body: JSON.stringify({
+                    name: "Stickman Leaderboard",
+                    data: { leaderboard: [] }
+                })
+            });
+            return [];
+        } catch (err) {
+            throw err;
+        }
     }
 };
 
@@ -496,6 +564,10 @@ function setupControls() {
 }
 
 function setupLeaderboardAndAccountUI() {
+    let adminMode = false;
+    const adminPanel = document.getElementById('admin-panel');
+    const adminStatus = document.getElementById('admin-status');
+
     const openLeaderboardModal = async () => {
         ui.leaderboardModal.classList.remove('hidden');
         ui.leaderboardList.innerHTML = '';
@@ -534,6 +606,22 @@ function setupLeaderboardAndAccountUI() {
             row.appendChild(nameSpan);
             row.appendChild(scoreSpan);
             row.appendChild(dateSpan);
+
+            if (adminMode) {
+                const delBtn = document.createElement('button');
+                delBtn.className = 'delete-row-btn';
+                delBtn.textContent = '✖';
+                delBtn.title = 'Delete Player';
+                delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    delBtn.disabled = true;
+                    delBtn.textContent = '...';
+                    await LeaderboardClient.deleteScore(item.uuid || item.name);
+                    openLeaderboardModal();
+                };
+                row.appendChild(delBtn);
+            }
+
             ui.leaderboardList.appendChild(row);
         });
     };
@@ -543,6 +631,48 @@ function setupLeaderboardAndAccountUI() {
     document.getElementById('close-leaderboard-btn').onclick = () => {
         ui.leaderboardModal.classList.add('hidden');
     };
+
+    const adminToggleBtn = document.getElementById('admin-toggle-btn');
+    if (adminToggleBtn) {
+        adminToggleBtn.onclick = () => {
+            adminMode = !adminMode;
+            if (adminPanel) adminPanel.classList.toggle('hidden', !adminMode);
+            openLeaderboardModal();
+        };
+    }
+
+    const clearBotsBtn = document.getElementById('admin-clear-bots-btn');
+    if (clearBotsBtn) {
+        clearBotsBtn.onclick = async () => {
+            if (adminStatus) {
+                adminStatus.classList.remove('hidden', 'success');
+                adminStatus.textContent = "REMOVING BOTS...";
+            }
+            await LeaderboardClient.removeAllBots();
+            if (adminStatus) {
+                adminStatus.className = "success";
+                adminStatus.textContent = "✅ BOT SCORES REMOVED!";
+            }
+            openLeaderboardModal();
+        };
+    }
+
+    const resetBoardBtn = document.getElementById('admin-reset-board-btn');
+    if (resetBoardBtn) {
+        resetBoardBtn.onclick = async () => {
+            if (!confirm("Are you sure you want to wipe ALL scores from the leaderboard?")) return;
+            if (adminStatus) {
+                adminStatus.classList.remove('hidden', 'success');
+                adminStatus.textContent = "WIPING LEADERBOARD...";
+            }
+            await LeaderboardClient.wipeLeaderboard();
+            if (adminStatus) {
+                adminStatus.className = "success";
+                adminStatus.textContent = "✅ LEADERBOARD WIPED CLEAN!";
+            }
+            openLeaderboardModal();
+        };
+    }
 
     const openRenameModal = () => {
         ui.renameModal.classList.remove('hidden');
