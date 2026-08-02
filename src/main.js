@@ -130,8 +130,8 @@ const ScoreVault = {
     }
 };
 
-// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (100% PERMANENT EXTENDSCLASS / NO RATE LIMIT) ---
-const LEADERBOARD_API_URL = "https://extendsclass.com/api/json-storage/bin/aaeedca";
+// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (USER ACCOUNT OWNED / ENTERPRISE SSL) ---
+const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fc39f-55d8-728a-8dce-468cbbe4c38c";
 
 const LeaderboardClient = {
     async fetchLeaderboard() {
