@@ -565,11 +565,15 @@ function setupControls() {
 
 function setupLeaderboardAndAccountUI() {
     let adminMode = false;
+    try {
+        adminMode = localStorage.getItem('stickman_admin_unlocked') === '1313';
+    } catch(e) {}
     const adminPanel = document.getElementById('admin-panel');
     const adminStatus = document.getElementById('admin-status');
 
     const openLeaderboardModal = async () => {
         ui.leaderboardModal.classList.remove('hidden');
+        if (adminPanel) adminPanel.classList.toggle('hidden', !adminMode);
         ui.leaderboardList.innerHTML = '';
         ui.leaderboardLoading.classList.remove('hidden');
         ui.leaderboardLoading.textContent = "LOADING RUNNERS...";
@@ -632,12 +636,28 @@ function setupLeaderboardAndAccountUI() {
         ui.leaderboardModal.classList.add('hidden');
     };
 
-    const adminToggleBtn = document.getElementById('admin-toggle-btn');
-    if (adminToggleBtn) {
-        adminToggleBtn.onclick = () => {
-            adminMode = !adminMode;
-            if (adminPanel) adminPanel.classList.toggle('hidden', !adminMode);
-            openLeaderboardModal();
+    const lbTitle = document.getElementById('leaderboard-title');
+    if (lbTitle) {
+        let clickCount = 0;
+        let clickTimer = null;
+        lbTitle.style.cursor = "pointer";
+        lbTitle.onclick = () => {
+            clickCount++;
+            if (clickTimer) clearTimeout(clickTimer);
+            clickTimer = setTimeout(() => { clickCount = 0; }, 800);
+            if (clickCount >= 3) {
+                clickCount = 0;
+                const pin = prompt("ENTER GAME DEVELOPER PIN (1313):");
+                if (pin === "1313" || pin === "admin13") {
+                    adminMode = !adminMode;
+                    try { localStorage.setItem('stickman_admin_unlocked', '1313'); } catch(e){}
+                    if (adminPanel) adminPanel.classList.toggle('hidden', !adminMode);
+                    openLeaderboardModal();
+                    alert(adminMode ? "✅ ADMIN MODE ENABLED! Developer controls unlocked." : "🔒 ADMIN MODE DISABLED");
+                } else if (pin !== null) {
+                    alert("🚨 ACCESS DENIED: INVALID PASSCODE");
+                }
+            }
         };
     }
 
