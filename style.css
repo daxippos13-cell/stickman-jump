@@ -155,7 +155,10 @@ button {
     font-family: 'Fredoka', sans-serif;
     box-shadow: 0 5px 0 var(--primary-dark);
     transition: transform 0.1s, background-color 0.15s;
-    outline: none;
+    outline: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    user-select: none;
+    -webkit-user-select: none;
     width: 100%;
     max-width: 320px;
 }

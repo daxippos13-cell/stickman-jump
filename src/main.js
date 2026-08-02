@@ -568,7 +568,6 @@ function setupControls() {
     document.getElementById('restart-btn').onclick = resetGame;
 
     if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
-        ui.mobile.style.display = 'flex';
         const btnJump = document.getElementById('btn-jump');
         const btnDuck = document.getElementById('btn-duck');
         if (btnJump) {
@@ -759,6 +758,9 @@ function startGame() {
     ui.gameOver.classList.add('hidden');
     ui.leaderboardModal.classList.add('hidden');
     ui.renameModal.classList.add('hidden');
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        if (ui.mobile) ui.mobile.style.display = 'flex';
+    }
     
     ScoreVault.reset();
     gameSpeed = CONFIG.INITIAL_SPEED;
@@ -788,6 +790,7 @@ function resetGame() { startGame(); }
 function gameOver() {
     isPlaying = false;
     isDucking = false;
+    if (ui.mobile) ui.mobile.style.display = 'none';
     playBeep(180, 'sawtooth', 0.4);
     const currentScore = ScoreVault.get();
     if (currentScore > highScore) {
