@@ -896,7 +896,7 @@ function animate() {
                 playerParts.torso.rotation.set(-0.25, 0, 0);
                 
                 playerParts.head.position.set(0, 2.05, -0.2);
-                playerParts.head.rotation.set(0.3, 0, 0);
+                playerParts.head.rotation.set(0, 0, 0);
                 
                 // Arms positioned at lowered shoulder height (1.9) and thrown BACK behind the hips in SIUUU V-shape!
                 playerParts.lArm.position.set(-0.6, 1.9, -0.2);
@@ -912,7 +912,7 @@ function animate() {
                 playerParts.rLeg.position.set(0.3, 0.8, 0.2);
                 playerParts.rLeg.rotation.set(-1.45, 0, 0);
                 
-                playerGroup.rotation.z = 0.1;
+                playerGroup.rotation.z = 0;
             } else {
                 // Standard Run Cycle
                 playerParts.torso.position.set(0, 2.5 + Math.sin(s*2) * 0.1, 0);
