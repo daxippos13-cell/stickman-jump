@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>3D Stickman Runner - Dino Style</title>
     <!-- SVG Favicon to prevent 404 errors -->
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2220%22 r=%2212%22 fill=%22%232d3436%22/><path d=%22M50 32 L50 65 M30 45 L70 45 M50 65 L32 90 M50 65 L68 90%22 stroke=%22%232d3436%22 stroke-width=%228%22 stroke-linecap=%22round%22/></svg>">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2220%22 r=%2212%22 fill=%22%230984e3%22/><path d=%22M50 32 L50 65 M30 45 L70 45 M50 65 L32 90 M50 65 L68 90%22 stroke=%22%232d3436%22 stroke-width=%228%22 stroke-linecap=%22round%22/></svg>">
     <link rel="stylesheet" href="./style.css">
 </head>
 <body>
@@ -23,13 +23,19 @@
         <div id="main-menu">
             <h1>STICKMAN<br>RUNNER 3D</h1>
             <p>Dino-Style Endless 3D Parkour</p>
+            
+            <div class="account-badge-box">
+                <span>ACCOUNT: </span><strong id="menu-account-name">RUNNER</strong>
+                <button id="menu-rename-btn" class="icon-btn" title="Change Name">✏️</button>
+            </div>
+
             <div class="menu-buttons">
                 <button id="start-btn">START RUNNING</button>
                 <button id="menu-leaderboard-btn" class="secondary-btn">🏆 LEADERBOARD</button>
             </div>
             <div class="controls-hint">
                 <span>[SPACE / UP] Jump & Double Jump</span>
-                <span>[DOWN] Duck / Slide</span>
+                <span>[DOWN] SIUUU Duck / Slide Under Hurdles</span>
             </div>
         </div>
 
@@ -37,13 +43,12 @@
             <h1>GAME OVER</h1>
             <p>Distance Run: <span id="final-score">0</span>m</p>
             
-            <div id="online-submit-container">
-                <div class="submit-header">RECORD SCORE TO GLOBAL LEADERBOARD</div>
-                <div class="input-row">
-                    <input type="text" id="player-name-input" placeholder="YOUR NAME" maxlength="12" autocomplete="off" spellcheck="false">
-                    <button id="submit-score-btn">SAVE SCORE</button>
+            <div id="account-status-box">
+                <div class="account-header">
+                    <span>ACCOUNT: </span><strong id="gameover-account-name">RUNNER</strong>
+                    <button id="gameover-rename-btn" class="icon-btn" title="Change Name">✏️</button>
                 </div>
-                <div id="submit-status" class="hidden"></div>
+                <div id="sync-status">SYNCING SCORE...</div>
             </div>
 
             <div class="game-over-buttons">
@@ -52,18 +57,35 @@
             </div>
         </div>
 
+        <!-- Leaderboard Modal -->
         <div id="leaderboard-modal" class="hidden">
             <div class="leaderboard-content">
                 <h2>GLOBAL LEADERBOARD</h2>
-                <div class="leaderboard-subtitle">TOP RUNNERS WORLDWIDE</div>
+                <div class="leaderboard-subtitle">UNIQUE ACCOUNTS WORLDWIDE</div>
                 <div id="leaderboard-loading">LOADING RUNNERS...</div>
                 <div id="leaderboard-list"></div>
                 <button id="close-leaderboard-btn">CLOSE</button>
             </div>
         </div>
+
+        <!-- Rename Account Modal -->
+        <div id="rename-modal" class="hidden">
+            <div class="modal-content">
+                <h2>CHANGE ACCOUNT NAME</h2>
+                <p class="modal-subtitle">EACH NAME MUST BE UNIQUE ON THE LEADERBOARD</p>
+                <div class="rename-input-box">
+                    <input type="text" id="new-name-input" placeholder="NEW NAME (MAX 12)" maxlength="12" autocomplete="off" spellcheck="false">
+                </div>
+                <div id="rename-status" class="hidden"></div>
+                <div class="modal-buttons">
+                    <button id="save-name-btn">SAVE NAME</button>
+                    <button id="cancel-name-btn" class="secondary-btn">CANCEL</button>
+                </div>
+            </div>
+        </div>
         
         <div id="mobile-controls">
-            <button class="touch-btn" id="btn-duck">DUCK</button>
+            <button class="touch-btn" id="btn-duck">SLIDE</button>
             <button class="touch-btn" id="btn-jump">JUMP</button>
         </div>
     </div>

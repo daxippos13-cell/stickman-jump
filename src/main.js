@@ -16,10 +16,38 @@ const CONFIG = {
         TRACK_LINE: 0xd4c483,
         CACTUS: 0x27ae60,
         CACTUS_DARK: 0x1e8449,
-        BIRD: 0xe67e22,
+        BARRICADE_POST: 0x636e72,
+        BARRICADE_ORANGE: 0xe17055,
+        BARRICADE_WHITE: 0xffffff,
         STICKMAN_SHIRT: 0x0984e3,
         STICKMAN_PANTS: 0x2d3436,
         STICKMAN_HEAD: 0xffdbac
+    }
+};
+
+// --- PERMANENT ACCOUNT MANAGER ---
+const AccountManager = {
+    getUUID() {
+        let uuid = localStorage.getItem('stickman_acc_uuid');
+        if (!uuid) {
+            uuid = 'acc_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
+            localStorage.setItem('stickman_acc_uuid', uuid);
+        }
+        return uuid;
+    },
+    getName() {
+        let name = localStorage.getItem('stickman_callsign');
+        if (!name) {
+            name = 'RUNNER_' + this.getUUID().substring(4, 8).toUpperCase();
+            localStorage.setItem('stickman_callsign', name);
+        }
+        return name;
+    },
+    setName(newName) {
+        const clean = (newName || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').substring(0, 12);
+        if (!clean) throw new Error("NAME CANNOT BE EMPTY");
+        localStorage.setItem('stickman_callsign', clean);
+        return clean;
     }
 };
 
@@ -56,17 +84,17 @@ const ScoreVault = {
             return false;
         }
         const elapsedSec = (Date.now() - this._startTime) / 1000;
-        // Generous plausibility ceiling: max 25 points per second + 300 base buffer
         if (this._val > (elapsedSec * 25 + 300)) {
             console.warn("SECURITY ALERT: Impossible velocity detected.");
             return false;
         }
         return true;
     },
-    generateToken(playerName) {
+    generateToken() {
         if (!this.verify()) return null;
         const scoreVal = Math.floor(this._val);
-        const payload = `${playerName}:${scoreVal}:${this._runId}:${this._startTime}`;
+        const myUUID = AccountManager.getUUID();
+        const payload = `${myUUID}:${scoreVal}:${this._runId}:${this._startTime}`;
         let hash = 0;
         for (let i = 0; i < payload.length; i++) {
             hash = ((hash << 5) - hash) + payload.charCodeAt(i);
@@ -76,7 +104,7 @@ const ScoreVault = {
     }
 };
 
-// --- ONLINE LEADERBOARD CLIENT (WITH COOKIE & RECORD-UPDATE LOGIC) ---
+// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT ---
 const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fbeb5-5f06-73a9-ab6e-7e94c29fe6c8";
 
 const LeaderboardClient = {
@@ -86,17 +114,16 @@ const LeaderboardClient = {
             if (!response.ok) throw new Error("Network response was not ok");
             const data = await response.json();
             const list = data.leaderboard || [];
-            return list.sort((a, b) => b.score - a.score).slice(0, 15);
+            return list.sort((a, b) => b.score - a.score).slice(0, 20);
         } catch (err) {
             console.error("Error fetching leaderboard:", err);
             return [];
         }
     },
 
-    async submitScore(playerName, token) {
-        if (!ScoreVault.verify() || !token) {
-            throw new Error("SECURITY CHECKSUM FAILED: ANOMALOUS VELOCITY");
-        }
+    // Auto-sync score to global leaderboard when personal high score is beaten
+    async syncScore(scoreVal, token) {
+        if (!ScoreVault.verify() || !token) return { updated: false, msg: "SECURITY ERROR" };
         try {
             const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store" });
             let data = { leaderboard: [] };
@@ -104,38 +131,37 @@ const LeaderboardClient = {
                 data = await response.json();
             }
             const list = data.leaderboard || [];
-            
-            const scoreVal = ScoreVault.get();
-            if (scoreVal <= 0) throw new Error("SCORE TOO LOW");
-
-            const cleanName = (playerName || "RUNNER").toUpperCase().substring(0, 12);
+            const myUUID = AccountManager.getUUID();
+            const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
 
-            // Check if user already exists on the leaderboard
-            const existingIndex = list.findIndex(item => (item.name || "").toUpperCase() === cleanName);
+            // 1. Find existing account entry by UUID
+            const existingIndex = list.findIndex(item => item.uuid === myUUID);
 
-            let statusMsg = "✅ NEW SCORE RECORDED!";
+            let statusMsg = "✅ NEW ACCOUNT & RECORD SAVED!";
             if (existingIndex !== -1) {
                 const oldRecord = list[existingIndex].score || 0;
+                list[existingIndex].name = myName; // keep name up to date
                 if (scoreVal > oldRecord) {
                     list[existingIndex].score = scoreVal;
                     list[existingIndex].date = todayStr;
                     list[existingIndex].hash = token;
-                    statusMsg = `✅ RECORD UPDATED! (BEAT OLD ${oldRecord})`;
+                    statusMsg = `🏆 PERSONAL RECORD AUTO-SYNCED! (BEAT OLD ${oldRecord})`;
                 } else {
-                    statusMsg = `ℹ️ ONLINE RECORD (${oldRecord}) IS HIGHER`;
+                    statusMsg = `ℹ️ ONLINE HIGH SCORE (${oldRecord}) IS HIGHER`;
                     return { updated: false, msg: statusMsg };
                 }
             } else {
                 list.push({
-                    name: cleanName,
+                    uuid: myUUID,
+                    name: myName,
                     score: scoreVal,
                     date: todayStr,
                     hash: token
                 });
             }
 
-            const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 25);
+            const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 30);
 
             const putResponse = await fetch(LEADERBOARD_API_URL, {
                 method: "PUT",
@@ -145,7 +171,43 @@ const LeaderboardClient = {
             if (!putResponse.ok) throw new Error("Failed to save to Server");
             return { updated: true, msg: statusMsg };
         } catch (err) {
-            console.error("Score submission error:", err);
+            console.error("Score auto-sync error:", err);
+            return { updated: false, msg: `🚨 SYNC ERROR: ${err.message}` };
+        }
+    },
+
+    // Validate and rename account (enforce uniqueness across all accounts!)
+    async renameAccount(newName) {
+        const cleanName = AccountManager.setName(newName);
+        const myUUID = AccountManager.getUUID();
+        try {
+            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store" });
+            let data = { leaderboard: [] };
+            if (response.ok) {
+                data = await response.json();
+            }
+            const list = data.leaderboard || [];
+
+            // Enforce Name Uniqueness! 2 accounts cannot have the same name
+            const duplicate = list.find(item => 
+                (item.name || "").toUpperCase() === cleanName && item.uuid !== myUUID
+            );
+            if (duplicate) {
+                throw new Error("NAME ALREADY TAKEN BY ANOTHER RUNNER!");
+            }
+
+            // Update my entry on the leaderboard if it exists
+            const myIndex = list.findIndex(item => item.uuid === myUUID);
+            if (myIndex !== -1) {
+                list[myIndex].name = cleanName;
+                await fetch(LEADERBOARD_API_URL, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ leaderboard: list })
+                });
+            }
+            return cleanName;
+        } catch (err) {
             throw err;
         }
     }
@@ -174,19 +236,24 @@ const ui = {
     leaderboardModal: document.getElementById('leaderboard-modal'),
     leaderboardList: document.getElementById('leaderboard-list'),
     leaderboardLoading: document.getElementById('leaderboard-loading'),
-    playerNameInput: document.getElementById('player-name-input'),
-    submitScoreBtn: document.getElementById('submit-score-btn'),
-    submitStatus: document.getElementById('submit-status')
+    renameModal: document.getElementById('rename-modal'),
+    newNameInput: document.getElementById('new-name-input'),
+    renameStatus: document.getElementById('rename-status'),
+    menuAccountName: document.getElementById('menu-account-name'),
+    gameoverAccountName: document.getElementById('gameover-account-name'),
+    syncStatus: document.getElementById('sync-status')
 };
 
 let highScore = localStorage.getItem('stickman_resonance_v2') || 0;
 if (ui.highScore) ui.highScore.textContent = Math.floor(highScore).toString().padStart(5, '0');
 
-// Load stored callsign/cookie
-const storedCallsign = localStorage.getItem('stickman_callsign') || "";
-if (ui.playerNameInput && storedCallsign) {
-    ui.playerNameInput.value = storedCallsign;
+// Update UI account badges
+function updateAccountBadgeUI() {
+    const name = AccountManager.getName();
+    if (ui.menuAccountName) ui.menuAccountName.textContent = name;
+    if (ui.gameoverAccountName) ui.gameoverAccountName.textContent = name;
 }
+updateAccountBadgeUI();
 
 init();
 animate();
@@ -210,13 +277,13 @@ function init() {
     clock = new THREE.Clock();
 
     // Bright Daytime Outdoor Lighting
-    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.75);
     scene.add(ambient);
 
-    const hemi = new THREE.HemisphereLight(CONFIG.COLORS.SKY, CONFIG.COLORS.GROUND, 0.5);
+    const hemi = new THREE.HemisphereLight(CONFIG.COLORS.SKY, CONFIG.COLORS.GROUND, 0.55);
     scene.add(hemi);
 
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.25);
     sun.position.set(40, 80, 50);
     sun.castShadow = true;
     sun.shadow.camera.left = -100;
@@ -229,14 +296,13 @@ function init() {
     createDesertTrack();
     createPlayer();
     setupControls();
-    setupLeaderboardUI();
+    setupLeaderboardAndAccountUI();
     
     window.addEventListener('resize', onWindowResize);
     onWindowResize();
 }
 
 function createDesertTrack() {
-    // Ground plane (Desert sand)
     const size = 1000;
     const planeGeo = new THREE.PlaneGeometry(size, size);
     const planeMat = new THREE.MeshStandardMaterial({ 
@@ -250,7 +316,6 @@ function createDesertTrack() {
     plane.receiveShadow = true;
     scene.add(plane);
 
-    // Track markings
     const grid = new THREE.GridHelper(size, 80, CONFIG.COLORS.TRACK_LINE, CONFIG.COLORS.TRACK_LINE);
     grid.position.y = CONFIG.GROUND_Y;
     scene.add(grid);
@@ -306,7 +371,8 @@ function setupControls() {
             e.preventDefault();
         }
         if (!isPlaying && (e.code === 'Space' || e.code === 'Enter')) {
-            if (ui.leaderboardModal.classList.contains('hidden') && document.activeElement !== ui.playerNameInput) {
+            const modalsHidden = ui.leaderboardModal.classList.contains('hidden') && ui.renameModal.classList.contains('hidden');
+            if (modalsHidden && document.activeElement !== ui.newNameInput) {
                 startGame();
             }
         }
@@ -339,8 +405,8 @@ function setupControls() {
     }
 }
 
-function setupLeaderboardUI() {
-    const openModal = async () => {
+function setupLeaderboardAndAccountUI() {
+    const openLeaderboardModal = async () => {
         ui.leaderboardModal.classList.remove('hidden');
         ui.leaderboardList.innerHTML = '';
         ui.leaderboardLoading.classList.remove('hidden');
@@ -382,34 +448,41 @@ function setupLeaderboardUI() {
         });
     };
 
-    document.getElementById('menu-leaderboard-btn').onclick = openModal;
-    document.getElementById('view-leaderboard-btn').onclick = openModal;
+    document.getElementById('menu-leaderboard-btn').onclick = openLeaderboardModal;
+    document.getElementById('view-leaderboard-btn').onclick = openLeaderboardModal;
     document.getElementById('close-leaderboard-btn').onclick = () => {
         ui.leaderboardModal.classList.add('hidden');
     };
 
-    ui.submitScoreBtn.onclick = async () => {
-        const name = (ui.playerNameInput.value || "").trim() || "RUNNER";
-        localStorage.setItem('stickman_callsign', name);
+    // Account Rename Modal Handlers
+    const openRenameModal = () => {
+        ui.renameModal.classList.remove('hidden');
+        ui.renameStatus.classList.add('hidden');
+        ui.newNameInput.value = AccountManager.getName();
+        ui.newNameInput.focus();
+    };
 
-        const token = ScoreVault.generateToken(name);
-        ui.submitStatus.classList.remove('hidden', 'success', 'error');
-        ui.submitStatus.textContent = "SAVING TO LEADERBOARD...";
-        ui.submitScoreBtn.disabled = true;
+    document.getElementById('menu-rename-btn').onclick = openRenameModal;
+    document.getElementById('gameover-rename-btn').onclick = openRenameModal;
+    document.getElementById('cancel-name-btn').onclick = () => {
+        ui.renameModal.classList.add('hidden');
+    };
 
+    document.getElementById('save-name-btn').onclick = async () => {
+        const inputVal = (ui.newNameInput.value || "").trim();
+        ui.renameStatus.classList.remove('hidden', 'success', 'error');
+        ui.renameStatus.textContent = "VERIFYING NAME UNIQUENESS...";
         try {
-            const res = await LeaderboardClient.submitScore(name, token);
-            ui.submitStatus.className = "success";
-            ui.submitStatus.textContent = res.msg || "✅ SCORE SAVED!";
+            const savedName = await LeaderboardClient.renameAccount(inputVal);
+            ui.renameStatus.className = "success";
+            ui.renameStatus.textContent = `✅ RENAMED TO: ${savedName}`;
+            updateAccountBadgeUI();
             setTimeout(() => {
-                openModal();
-            }, 1000);
+                ui.renameModal.classList.add('hidden');
+            }, 800);
         } catch (err) {
-            ui.submitStatus.className = "error";
-            ui.submitStatus.textContent = `🚨 DENIED: ${err.message}`;
-            console.error(err);
-        } finally {
-            ui.submitScoreBtn.disabled = false;
+            ui.renameStatus.className = "error";
+            ui.renameStatus.textContent = `🚨 ${err.message}`;
         }
     };
 }
@@ -441,8 +514,7 @@ function startGame() {
     ui.mainMenu.classList.add('hidden');
     ui.gameOver.classList.add('hidden');
     ui.leaderboardModal.classList.add('hidden');
-    ui.submitStatus.classList.add('hidden');
-    ui.submitStatus.textContent = '';
+    ui.renameModal.classList.add('hidden');
     
     ScoreVault.reset();
     gameSpeed = CONFIG.INITIAL_SPEED;
@@ -480,7 +552,20 @@ function gameOver() {
     }
     ui.finalScore.textContent = Math.floor(currentScore);
     ui.gameOver.classList.remove('hidden');
-    if (ui.playerNameInput) ui.playerNameInput.focus();
+
+    // Automatically sync record to global leaderboard!
+    if (ui.syncStatus) {
+        ui.syncStatus.className = "";
+        ui.syncStatus.textContent = "SYNCING WITH GLOBAL LEADERBOARD...";
+        const token = ScoreVault.generateToken();
+        LeaderboardClient.syncScore(currentScore, token).then(res => {
+            ui.syncStatus.className = res.updated ? "success" : "";
+            ui.syncStatus.textContent = res.msg || "SYNC COMPLETE";
+        }).catch(err => {
+            ui.syncStatus.className = "error";
+            ui.syncStatus.textContent = "🚨 SYNC ERROR";
+        });
+    }
 }
 
 function jump() {
@@ -523,11 +608,9 @@ function createImpact(x, y, color) {
     }
 }
 
-// 3D Desert Rocks/Clouds/Hills in the background
 function spawnBackgroundScenery(x) {
     const isCloud = Math.random() > 0.5;
     if (isCloud) {
-        // Bright Cloud
         const w = 12 + Math.random() * 15;
         const geo = new THREE.BoxGeometry(w, 4, 6);
         const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 });
@@ -536,7 +619,6 @@ function spawnBackgroundScenery(x) {
         scene.add(c);
         backgroundElements.push(c);
     } else {
-        // Distant Desert Mesa/Rock
         const h = 10 + Math.random() * 25;
         const w = 15 + Math.random() * 20;
         const geo = new THREE.BoxGeometry(w, h, 12);
@@ -548,39 +630,104 @@ function spawnBackgroundScenery(x) {
     }
 }
 
-// Dino-Style Obstacles: Cacti (Ground) & Flying Birds (Air)
+// 3D Realistic Saguaro Cactus Helper
+function createRealisticCactusMesh(h) {
+    const group = new THREE.Group();
+    const mainMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS, roughness: 0.8 });
+    const ribMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS_DARK, roughness: 0.9 });
+
+    // Main Trunk
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, h, 8), mainMat);
+    trunk.position.y = h / 2;
+    trunk.castShadow = true;
+    group.add(trunk);
+
+    // Cactus Arms (1 or 2 arms on realistic saguaro)
+    const armCount = Math.random() > 0.3 ? (Math.random() > 0.5 ? 2 : 1) : 0;
+    for (let a = 0; a < armCount; a++) {
+        const side = a === 0 ? 1 : -1;
+        const armH = 1.0 + Math.random() * 0.8;
+        const armY = 1.0 + Math.random() * (h * 0.4);
+        
+        // Horizontal stub
+        const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.7, 6), mainMat);
+        stub.rotation.z = Math.PI / 2;
+        stub.position.set(side * 0.5, armY, 0);
+        stub.castShadow = true;
+        group.add(stub);
+
+        // Vertical upward arm
+        const upArm = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, armH, 6), mainMat);
+        upArm.position.set(side * 0.8, armY + armH / 2 - 0.2, 0);
+        upArm.castShadow = true;
+        group.add(upArm);
+    }
+
+    // Small desert rocks around base
+    for (let r = 0; r < 2; r++) {
+        const rock = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.35), ribMat);
+        rock.position.set((Math.random() - 0.5) * 0.8, 0.1, (Math.random() - 0.5) * 0.8);
+        group.add(rock);
+    }
+
+    return group;
+}
+
+// Realistic Obstacles: Saguaro Cacti (Jump) & Subway Surfers Hazard Barricades (Slide / Duck)
 function spawnObstacle() {
     const group = new THREE.Group();
     group.position.set(120, CONFIG.GROUND_Y, 0);
     
-    const isAir = Math.random() > 0.65;
+    const isSlideBarricade = Math.random() > 0.65;
     let collider;
 
-    if (isAir) {
-        // 3D Flying Bird / Pterodactyl (requires ducking)
-        const wingSpan = 3.5;
-        const geo = new THREE.BoxGeometry(wingSpan, 0.6, 1.2);
-        const mat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BIRD, roughness: 0.6 });
-        const bird = new THREE.Mesh(geo, mat);
-        bird.position.y = 5.2;
-        bird.castShadow = true;
-        group.add(bird);
+    if (isSlideBarricade) {
+        // Subway Surfers-style Hazard Barricade (MUST SLIDE UNDER!)
+        const postMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_POST, roughness: 0.7 });
+        const orangeMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_ORANGE, roughness: 0.5 });
+        const whiteMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_WHITE, roughness: 0.5 });
+
+        // Left and Right support posts (height 5.2)
+        const leftPost = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.2, 0.4), postMat);
+        leftPost.position.set(0, 2.6, -1.6);
+        leftPost.castShadow = true;
+        group.add(leftPost);
+
+        const rightPost = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.2, 0.4), postMat);
+        rightPost.position.set(0, 2.6, 1.6);
+        rightPost.castShadow = true;
+        group.add(rightPost);
+
+        // Top hazard hurdle banner (from y=3.0 to y=5.0)
+        const bannerW = 3.6, bannerH = 2.0;
+        const banner = new THREE.Mesh(new THREE.BoxGeometry(0.4, bannerH, bannerW), orangeMat);
+        banner.position.set(0, 4.0, 0);
+        banner.castShadow = true;
+        group.add(banner);
+
+        // Stripes on banner
+        for (let s = -1.2; s <= 1.2; s += 0.8) {
+            const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.42, bannerH, 0.35), whiteMat);
+            stripe.position.set(0, 4.0, s);
+            group.add(stripe);
+        }
         
-        collider = { type: 'duck', x: 120, w: wingSpan, yLow: 4.8 };
+        // HITBOX: yLow is set to 3.0!
+        // Standing head height = 3.9 -> BAM! Collision!
+        // SIUUU Slide head height = 2.0 -> SAFE! You MUST slide!
+        collider = { type: 'duck', x: 120, w: 2.2, yLow: 3.0 };
     } else {
-        // 3D Cactus or Cactus Cluster (like Chrome Dino!)
+        // 3D Realistic Saguaro Cactus Cluster
         const count = Math.floor(Math.random() * 3) + 1; // 1 to 3 cacti
-        const mat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS, roughness: 0.8 });
-        let totalWidth = count * 1.5;
+        let totalWidth = count * 1.6;
         let maxH = 2.5;
 
         for (let i = 0; i < count; i++) {
-            const h = 2.8 + Math.random() * 1.8;
+            const h = 2.8 + Math.random() * 1.6;
             if (h > maxH) maxH = h;
-            const cactus = new THREE.Mesh(new THREE.BoxGeometry(1.2, h, 1.2), mat);
-            cactus.position.set((i - (count-1)/2) * 1.4, h/2, 0);
-            cactus.castShadow = true;
-            group.add(cactus);
+            const cactusMesh = createRealisticCactusMesh(h);
+            cactusMesh.position.set((i - (count - 1) / 2) * 1.4, 0, 0);
+            group.add(cactusMesh);
         }
         
         collider = { type: 'jump', x: 120, w: totalWidth, h: maxH };
@@ -655,14 +802,16 @@ function update(dt) {
             continue;
         }
 
-        // Accurate Collision Check
+        // Precise Collision Hitboxes
         const dx = Math.abs(playerGroup.position.x - o.collider.x);
         if (dx < (o.collider.w / 2 + 0.45)) {
             const py = playerGroup.position.y - CONFIG.GROUND_Y;
             if (o.collider.type === 'jump') {
                 if (py < o.collider.h - 0.2) gameOver();
             } else {
-                const headY = py + (isDucking ? 2.0 : 4.0);
+                // For 'duck' hurdles: standing headY is 3.9, which is > yLow=3.0 -> CRASH!
+                // SIUUU slide headY is 2.0 <= 3.0 -> SAFE!
+                const headY = py + (isDucking ? 2.0 : 3.9);
                 if (headY > o.collider.yLow) gameOver();
             }
         }
@@ -703,27 +852,36 @@ function animate() {
         const s = t * (gameSpeed * 0.5);
         if (isGrounded) {
             if (isDucking) {
-                playerParts.torso.position.y = 1.2;
-                playerParts.head.position.y = 2.2;
-                playerParts.lLeg.rotation.x = -Math.PI/2.2;
-                playerParts.rLeg.rotation.x = -Math.PI/2.5;
-                playerParts.lArm.rotation.x = Math.PI/4;
-                playerParts.rArm.rotation.x = Math.PI/4;
+                // RONALDO SIUUU POWER SLIDE POSE!
+                playerParts.torso.position.y = 1.35;
+                playerParts.torso.rotation.z = 0.18; // lean back in slide
+                playerParts.head.position.y = 2.05;  // tucked head (height 2.05 <= 3.0 safe!)
+                
+                // Arms thrown back and out in iconic SIUUU pose
+                playerParts.lArm.rotation.set(-Math.PI / 2.3, 0, 0.7);
+                playerParts.rArm.rotation.set(-Math.PI / 2.3, 0, -0.7);
+                
+                // Legs spread forward in power slide
+                playerParts.lLeg.rotation.set(-Math.PI / 2.2, 0, 0);
+                playerParts.rLeg.rotation.set(-Math.PI / 2.5, 0, 0);
                 playerGroup.rotation.z = 0.1;
             } else {
+                // Standard Run Cycle
                 playerParts.torso.position.y = 2.5 + Math.sin(s*2) * 0.1;
+                playerParts.torso.rotation.z = 0;
                 playerParts.head.position.y = 3.9 + Math.sin(s*2) * 0.15;
                 playerParts.lLeg.rotation.x = Math.sin(s) * 1.2;
                 playerParts.rLeg.rotation.x = Math.sin(s + Math.PI) * 1.2;
-                playerParts.lArm.rotation.x = Math.sin(s + Math.PI) * 1.0;
-                playerParts.rArm.rotation.x = Math.sin(s) * 1.0;
+                playerParts.lArm.rotation.set(Math.sin(s + Math.PI) * 1.0, 0, 0);
+                playerParts.rArm.rotation.set(Math.sin(s) * 1.0, 0, 0);
                 playerGroup.rotation.z = 0;
             }
         } else {
+            // Air / Jump Pose
             playerParts.lLeg.rotation.x = -0.5;
             playerParts.rLeg.rotation.x = 0.2;
-            playerParts.lArm.rotation.x = -2.0;
-            playerParts.rArm.rotation.x = -2.0;
+            playerParts.lArm.rotation.set(-2.0, 0, 0);
+            playerParts.rArm.rotation.set(-2.0, 0, 0);
             playerGroup.rotation.z = velocityY * 0.01;
         }
         

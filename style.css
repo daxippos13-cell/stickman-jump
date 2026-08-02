@@ -6,6 +6,7 @@
     --accent-green: #00b894;
     --accent-green-dark: #008f72;
     --accent-orange: #e17055;
+    --accent-red: #d63031;
     --text-dark: #2d3436;
     --text-muted: #636e72;
     --bg-light: #f7f9fa;
@@ -81,7 +82,7 @@ body {
 }
 
 h1 {
-    margin: 0 0 15px 0;
+    margin: 0 0 10px 0;
     color: var(--text-dark);
     font-family: 'Montserrat', sans-serif;
     font-weight: 800;
@@ -94,7 +95,44 @@ p {
     color: var(--text-muted);
     font-size: 18px;
     font-weight: 600;
-    margin-bottom: 30px;
+    margin-bottom: 25px;
+}
+
+.account-badge-box, .account-header {
+    background: #f1f2f6;
+    border: 2px solid #dfe4ea;
+    border-radius: 12px;
+    padding: 10px 18px;
+    margin: 0 auto 20px auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    color: var(--text-dark);
+}
+
+.account-badge-box strong, .account-header strong {
+    color: var(--primary-color);
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+button.icon-btn {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    font-size: 16px;
+    width: auto;
+    cursor: pointer;
+}
+
+button.icon-btn:hover {
+    transform: scale(1.2);
+    color: var(--primary-color);
+    background: transparent;
+    box-shadow: none;
 }
 
 .menu-buttons, .game-over-buttons {
@@ -144,93 +182,40 @@ button:active {
     box-shadow: 0 2px 0 var(--primary-dark);
 }
 
-/* Online Submission Container */
-#online-submit-container {
+/* Account Auto-Sync Status Box */
+#account-status-box {
     background: #f1f2f6;
     border: 2px solid #dfe4ea;
     border-radius: 14px;
-    padding: 18px 20px;
+    padding: 16px 20px;
     margin: 15px auto 25px auto;
     width: 100%;
-    max-width: 360px;
+    max-width: 380px;
     text-align: center;
 }
 
-.submit-header {
-    font-size: 13px;
+#sync-status {
+    font-size: 14px;
     font-weight: 700;
-    color: var(--text-dark);
-    letter-spacing: 1px;
-    margin-bottom: 12px;
+    margin-top: 5px;
 }
 
-.input-row {
-    display: flex;
-    gap: 10px;
-    justify-content: center;
-}
-
-#player-name-input {
-    background: #ffffff;
-    border: 2px solid #ced6e0;
-    color: var(--text-dark);
-    font-family: 'Fredoka', sans-serif;
-    font-weight: 700;
-    font-size: 15px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    outline: none;
-    width: 65%;
-    text-transform: uppercase;
-    transition: 0.2s;
-}
-
-#player-name-input:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.2);
-}
-
-#submit-score-btn {
-    width: 35%;
-    padding: 10px;
-    font-size: 15px;
-    background: var(--accent-orange);
-    box-shadow: 0 4px 0 #c85a3f;
-    border-radius: 8px;
-}
-
-#submit-score-btn:hover {
-    background: #f07d62;
-    box-shadow: 0 6px 0 #c85a3f;
-}
-
-#submit-score-btn:active {
-    transform: translateY(2px);
-    box-shadow: 0 2px 0 #c85a3f;
-}
-
-#submit-status {
-    margin-top: 10px;
-    font-size: 13px;
-    font-weight: 700;
-}
-
-#submit-status.success {
+#sync-status.success {
     color: #2ed573;
 }
 
-#submit-status.error {
+#sync-status.error {
     color: #ff4757;
 }
 
-/* Leaderboard Modal */
-#leaderboard-modal {
+/* Leaderboard Modal & Rename Modal */
+#leaderboard-modal, #rename-modal {
     position: absolute;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(8px);
     display: flex;
     align-items: center;
@@ -240,7 +225,7 @@ button:active {
     padding: 20px;
 }
 
-.leaderboard-content {
+.leaderboard-content, .modal-content {
     background: #ffffff;
     border: 3px solid #dfe6e9;
     border-radius: 20px;
@@ -252,21 +237,69 @@ button:active {
     flex-direction: column;
     align-items: center;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+    text-align: center;
 }
 
-.leaderboard-content h2 {
+.leaderboard-content h2, .modal-content h2 {
     font-family: 'Montserrat', sans-serif;
     font-weight: 800;
-    font-size: 32px;
+    font-size: 30px;
     color: var(--text-dark);
     margin: 0;
 }
 
-.leaderboard-subtitle {
-    font-size: 14px;
+.leaderboard-subtitle, .modal-subtitle {
+    font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
-    margin-bottom: 20px;
+    margin: 6px 0 20px 0;
+}
+
+.rename-input-box {
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+#new-name-input {
+    background: #ffffff;
+    border: 2px solid #ced6e0;
+    color: var(--text-dark);
+    font-family: 'Fredoka', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+    padding: 12px 18px;
+    border-radius: 10px;
+    outline: none;
+    width: 80%;
+    text-align: center;
+    text-transform: uppercase;
+    transition: 0.2s;
+}
+
+#new-name-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(9, 132, 227, 0.2);
+}
+
+#rename-status {
+    margin: 5px 0 15px 0;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+#rename-status.error {
+    color: #ff4757;
+}
+
+#rename-status.success {
+    color: #2ed573;
+}
+
+.modal-buttons {
+    display: flex;
+    gap: 12px;
+    width: 100%;
+    justify-content: center;
 }
 
 #leaderboard-loading {
@@ -460,13 +493,9 @@ button:active {
         font-size: 15px;
     }
 
-    .leaderboard-content {
+    .leaderboard-content, .modal-content {
         padding: 25px 20px;
         max-width: 95vw;
-    }
-
-    .leaderboard-content h2 {
-        font-size: 26px;
     }
 }
 
@@ -493,20 +522,6 @@ button:active {
     button.secondary-btn {
         font-size: 15px;
         padding: 10px 20px;
-    }
-
-    #online-submit-container {
-        padding: 12px 10px;
-        margin: 10px auto 15px auto;
-    }
-
-    .input-row {
-        flex-direction: column;
-        gap: 8px;
-    }
-
-    #player-name-input, #submit-score-btn {
-        width: 100%;
     }
 
     #score-display {
