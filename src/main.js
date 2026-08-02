@@ -130,8 +130,8 @@ const ScoreVault = {
     }
 };
 
-// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (100% PERMANENT / CLOUDFLARE SSL) ---
-const LEADERBOARD_API_URL = "https://api.restful-api.dev/objects/ff8081819f7e10ae019fc3a134d163da";
+// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (100% PERMANENT EXTENDSCLASS / NO RATE LIMIT) ---
+const LEADERBOARD_API_URL = "https://extendsclass.com/api/json-storage/bin/aaeedca";
 
 const LeaderboardClient = {
     async fetchLeaderboard() {
@@ -142,7 +142,7 @@ const LeaderboardClient = {
             });
             if (!response.ok) throw new Error("Network response was not ok");
             const res = await response.json();
-            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const list = (res && res.leaderboard) ? res.leaderboard : [];
             return list.sort((a, b) => b.score - a.score).slice(0, 20);
         } catch (err) {
             console.warn("Leaderboard offline fallback:", err);
@@ -158,11 +158,11 @@ const LeaderboardClient = {
                 cache: "no-store",
                 headers: { "Accept": "application/json" }
             });
-            let res = { data: { leaderboard: [] } };
+            let res = { leaderboard: [] };
             if (response.ok) {
                 res = await response.json();
             }
-            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const list = (res && res.leaderboard) ? res.leaderboard : [];
             const myUUID = AccountManager.getUUID();
             const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
@@ -204,8 +204,7 @@ const LeaderboardClient = {
                 method: "PUT",
                 headers: { "Content-Type": "application/json", "Accept": "application/json" },
                 body: JSON.stringify({
-                    name: "Stickman Leaderboard",
-                    data: { leaderboard: updatedList }
+                    leaderboard: updatedList
                 })
             });
             if (!putResponse.ok) throw new Error("Failed to save to Server");
@@ -226,11 +225,11 @@ const LeaderboardClient = {
                 cache: "no-store",
                 headers: { "Accept": "application/json" }
             });
-            let res = { data: { leaderboard: [] } };
+            let res = { leaderboard: [] };
             if (response.ok) {
                 res = await response.json();
             }
-            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const list = (res && res.leaderboard) ? res.leaderboard : [];
 
             // Enforce Name Uniqueness! Another account cannot have the exact same name
             const duplicate = list.find(item => 
@@ -253,8 +252,7 @@ const LeaderboardClient = {
                     method: "PUT",
                     headers: { "Content-Type": "application/json", "Accept": "application/json" },
                     body: JSON.stringify({
-                        name: "Stickman Leaderboard",
-                        data: { leaderboard: list }
+                        leaderboard: list
                     })
                 });
             }
@@ -269,9 +267,9 @@ const LeaderboardClient = {
         const BOT_NAMES = ["NEON_PHANTOM", "GRID_RUNNER", "CYBER_NINJA", "SYNTH_WAVE", "ZERO_COOL"];
         try {
             const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store", headers: { "Accept": "application/json" } });
-            let res = { data: { leaderboard: [] } };
+            let res = { leaderboard: [] };
             if (response.ok) res = await response.json();
-            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const list = (res && res.leaderboard) ? res.leaderboard : [];
             const cleanList = list.filter(item => 
                 item.hash !== "seed" && 
                 !BOT_NAMES.includes((item.name || "").toUpperCase())
@@ -280,8 +278,7 @@ const LeaderboardClient = {
                 method: "PUT",
                 headers: { "Content-Type": "application/json", "Accept": "application/json" },
                 body: JSON.stringify({
-                    name: "Stickman Leaderboard",
-                    data: { leaderboard: cleanList }
+                    leaderboard: cleanList
                 })
             });
             return cleanList;
@@ -294,9 +291,9 @@ const LeaderboardClient = {
     async deleteScore(targetId) {
         try {
             const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store", headers: { "Accept": "application/json" } });
-            let res = { data: { leaderboard: [] } };
+            let res = { leaderboard: [] };
             if (response.ok) res = await response.json();
-            const list = (res && res.data && res.data.leaderboard) ? res.data.leaderboard : [];
+            const list = (res && res.leaderboard) ? res.leaderboard : [];
             const cleanList = list.filter(item => 
                 item.uuid !== targetId && 
                 (item.name || "").toUpperCase() !== (targetId || "").toUpperCase()
@@ -305,8 +302,7 @@ const LeaderboardClient = {
                 method: "PUT",
                 headers: { "Content-Type": "application/json", "Accept": "application/json" },
                 body: JSON.stringify({
-                    name: "Stickman Leaderboard",
-                    data: { leaderboard: cleanList }
+                    leaderboard: cleanList
                 })
             });
             return cleanList;
@@ -322,8 +318,7 @@ const LeaderboardClient = {
                 method: "PUT",
                 headers: { "Content-Type": "application/json", "Accept": "application/json" },
                 body: JSON.stringify({
-                    name: "Stickman Leaderboard",
-                    data: { leaderboard: [] }
+                    leaderboard: []
                 })
             });
             return [];
