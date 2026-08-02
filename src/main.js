@@ -25,33 +25,59 @@ const CONFIG = {
     }
 };
 
-// --- PERMANENT ACCOUNT MANAGER ---
+// --- PROFANITY & BAD WORD FILTER ---
+const BAD_WORDS = [
+    "FUCK", "SHIT", "BITCH", "CUNT", "DICK", "COCK", "PUSSY", "ASSHOLE", "NIGG", "FAG", 
+    "SLUT", "WHORE", "RETARD", "BASTARD", "WANKER", "TWAT", "PISS", "PENIS", "VAGINA", 
+    "BOOBS", "PORN", "SEX", "HITLER", "NAZI", "KYS", "FUK", "FUC", "SH1T", "B1TCH", 
+    "D1CK", "A55", "ASS"
+];
+
+function containsBadWord(name) {
+    const upper = (name || "").toUpperCase().replace(/[^A-Z0-9]/g, '');
+    return BAD_WORDS.some(bad => upper.includes(bad));
+}
+
+// --- PERMANENT ACCOUNT MANAGER (WITH SAFE LOCALSTORAGE & UUID LINKING) ---
 const AccountManager = {
     getUUID() {
-        let uuid = localStorage.getItem('stickman_acc_uuid');
-        if (!uuid) {
-            uuid = 'acc_' + Math.random().toString(36).substring(2, 11) + Date.now().toString(36);
-            localStorage.setItem('stickman_acc_uuid', uuid);
+        try {
+            let uuid = localStorage.getItem('stickman_acc_uuid');
+            if (!uuid) {
+                uuid = 'acc_' + Math.random().toString(36).substring(2, 11) + '_' + Date.now().toString(36);
+                localStorage.setItem('stickman_acc_uuid', uuid);
+            }
+            return uuid;
+        } catch (e) {
+            return 'acc_anon_' + Math.random().toString(36).substring(2, 8);
         }
-        return uuid;
     },
     getName() {
-        let name = localStorage.getItem('stickman_callsign');
-        if (!name) {
-            name = 'RUNNER_' + this.getUUID().substring(4, 8).toUpperCase();
-            localStorage.setItem('stickman_callsign', name);
+        try {
+            let name = localStorage.getItem('stickman_callsign');
+            if (!name) {
+                name = 'RUNNER_' + this.getUUID().substring(4, 8).toUpperCase();
+                localStorage.setItem('stickman_callsign', name);
+            }
+            return name;
+        } catch (e) {
+            return 'RUNNER';
         }
-        return name;
     },
     setName(newName) {
         const clean = (newName || '').trim().toUpperCase().replace(/[^A-Z0-9_]/g, '').substring(0, 12);
         if (!clean) throw new Error("NAME CANNOT BE EMPTY");
-        localStorage.setItem('stickman_callsign', clean);
+        if (containsBadWord(clean)) {
+            throw new Error("PROFANITY DETECTED: CHOOSE A CLEAN NAME!");
+        }
+        try {
+            localStorage.setItem('stickman_callsign', clean);
+        } catch (e) {}
         return clean;
     }
 };
 
-// --- ROBUST ANTI-CHEAT SCORE VAULT (NO FLOAT XOR BUG) ---
+// --- ROBUST ANTI-CHEAT SCORE VAULT ---
 const ScoreVault = {
     _val: 0,
     _token: '',
@@ -121,7 +147,7 @@ const LeaderboardClient = {
         }
     },
 
-    // Auto-sync score to global leaderboard when personal high score is beaten
+    // Auto-sync score to global leaderboard: recognizes user by UUID OR Username!
     async syncScore(scoreVal, token) {
         if (!ScoreVault.verify() || !token) return { updated: false, msg: "SECURITY ERROR" };
         try {
@@ -135,18 +161,23 @@ const LeaderboardClient = {
             const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
 
-            // 1. Find existing account entry by UUID
-            const existingIndex = list.findIndex(item => item.uuid === myUUID);
+            // 1. Find existing account entry by UUID OR exact Username match
+            const existingIndex = list.findIndex(item => 
+                (item.uuid && item.uuid === myUUID) || 
+                ((item.name || "").toUpperCase() === myName.toUpperCase())
+            );
 
             let statusMsg = "✅ NEW ACCOUNT & RECORD SAVED!";
             if (existingIndex !== -1) {
                 const oldRecord = list[existingIndex].score || 0;
-                list[existingIndex].name = myName; // keep name up to date
+                list[existingIndex].uuid = myUUID; // ensure permanent UUID link
+                list[existingIndex].name = myName; // keep name updated
+                
                 if (scoreVal > oldRecord) {
                     list[existingIndex].score = scoreVal;
                     list[existingIndex].date = todayStr;
                     list[existingIndex].hash = token;
-                    statusMsg = `🏆 PERSONAL RECORD AUTO-SYNCED! (BEAT OLD ${oldRecord})`;
+                    statusMsg = `🏆 RECORD AUTO-UPDATED! (BEAT OLD ${oldRecord})`;
                 } else {
                     statusMsg = `ℹ️ ONLINE HIGH SCORE (${oldRecord}) IS HIGHER`;
                     return { updated: false, msg: statusMsg };
@@ -176,7 +207,7 @@ const LeaderboardClient = {
         }
     },
 
-    // Validate and rename account (enforce uniqueness across all accounts!)
+    // Validate and rename account (enforce profanity filter + uniqueness across all accounts!)
     async renameAccount(newName) {
         const cleanName = AccountManager.setName(newName);
         const myUUID = AccountManager.getUUID();
@@ -188,17 +219,22 @@ const LeaderboardClient = {
             }
             const list = data.leaderboard || [];
 
-            // Enforce Name Uniqueness! 2 accounts cannot have the same name
+            // Enforce Name Uniqueness! Another account cannot have the exact same name
             const duplicate = list.find(item => 
-                (item.name || "").toUpperCase() === cleanName && item.uuid !== myUUID
+                (item.name || "").toUpperCase() === cleanName && 
+                item.uuid && item.uuid !== myUUID
             );
             if (duplicate) {
                 throw new Error("NAME ALREADY TAKEN BY ANOTHER RUNNER!");
             }
 
             // Update my entry on the leaderboard if it exists
-            const myIndex = list.findIndex(item => item.uuid === myUUID);
+            const myIndex = list.findIndex(item => 
+                (item.uuid && item.uuid === myUUID) || 
+                ((item.name || "").toUpperCase() === cleanName)
+            );
             if (myIndex !== -1) {
+                list[myIndex].uuid = myUUID;
                 list[myIndex].name = cleanName;
                 await fetch(LEADERBOARD_API_URL, {
                     method: "PUT",
@@ -244,10 +280,12 @@ const ui = {
     syncStatus: document.getElementById('sync-status')
 };
 
-let highScore = localStorage.getItem('stickman_resonance_v2') || 0;
+let highScore = 0;
+try {
+    highScore = localStorage.getItem('stickman_resonance_v2') || 0;
+} catch (e) {}
 if (ui.highScore) ui.highScore.textContent = Math.floor(highScore).toString().padStart(5, '0');
 
-// Update UI account badges
 function updateAccountBadgeUI() {
     const name = AccountManager.getName();
     if (ui.menuAccountName) ui.menuAccountName.textContent = name;
@@ -365,6 +403,42 @@ function createPlayer() {
     scene.add(playerGroup);
 }
 
+// --- MUTUALLY EXCLUSIVE JUMP & SLIDE CONTROLS ---
+function jump() {
+    // Cannot jump while sliding/ducking!
+    if (isDucking) return;
+
+    if (isGrounded) {
+        velocityY = CONFIG.JUMP_FORCE;
+        isGrounded = false;
+        jumpCount = 1;
+        createImpact(playerGroup.position.x, CONFIG.GROUND_Y, 0xbdc3c7);
+        playBeep(640, 'sine', 0.1);
+    } else if (jumpCount < 2) {
+        velocityY = CONFIG.JUMP_FORCE * CONFIG.DOUBLE_JUMP_MULT;
+        jumpCount = 2;
+        createImpact(playerGroup.position.x, playerGroup.position.y, 0x0984e3);
+        playBeep(880, 'sine', 0.1);
+    }
+}
+
+function startDuck() {
+    // If in the air and pressing duck/down, perform a fast-fall to the floor! Do not slide mid-air.
+    if (!isGrounded) {
+        velocityY = -CONFIG.JUMP_FORCE * 1.5;
+        return;
+    }
+    // Only duck/slide when grounded on the floor!
+    if (!isDucking && isGrounded) {
+        isDucking = true;
+        playBeep(350, 'sine', 0.08);
+    }
+}
+
+function endDuck() { 
+    isDucking = false; 
+}
+
 function setupControls() {
     document.addEventListener('keydown', (e) => {
         if (['Space', 'ArrowUp', 'ArrowDown'].includes(e.code)) {
@@ -454,7 +528,6 @@ function setupLeaderboardAndAccountUI() {
         ui.leaderboardModal.classList.add('hidden');
     };
 
-    // Account Rename Modal Handlers
     const openRenameModal = () => {
         ui.renameModal.classList.remove('hidden');
         ui.renameStatus.classList.add('hidden');
@@ -471,7 +544,7 @@ function setupLeaderboardAndAccountUI() {
     document.getElementById('save-name-btn').onclick = async () => {
         const inputVal = (ui.newNameInput.value || "").trim();
         ui.renameStatus.classList.remove('hidden', 'success', 'error');
-        ui.renameStatus.textContent = "VERIFYING NAME UNIQUENESS...";
+        ui.renameStatus.textContent = "VERIFYING NAME UNIQUENESS & FILTER...";
         try {
             const savedName = await LeaderboardClient.renameAccount(inputVal);
             ui.renameStatus.className = "success";
@@ -543,11 +616,14 @@ function resetGame() { startGame(); }
 
 function gameOver() {
     isPlaying = false;
+    isDucking = false;
     playBeep(180, 'sawtooth', 0.4);
     const currentScore = ScoreVault.get();
     if (currentScore > highScore) {
         highScore = currentScore;
-        localStorage.setItem('stickman_resonance_v2', highScore);
+        try {
+            localStorage.setItem('stickman_resonance_v2', highScore);
+        } catch(e){}
         if (ui.highScore) ui.highScore.textContent = Math.floor(highScore).toString().padStart(5, '0');
     }
     ui.finalScore.textContent = Math.floor(currentScore);
@@ -567,30 +643,6 @@ function gameOver() {
         });
     }
 }
-
-function jump() {
-    if (isGrounded) {
-        velocityY = CONFIG.JUMP_FORCE;
-        isGrounded = false;
-        jumpCount = 1;
-        createImpact(playerGroup.position.x, CONFIG.GROUND_Y, 0xbdc3c7);
-        playBeep(640, 'sine', 0.1);
-    } else if (jumpCount < 2) {
-        velocityY = CONFIG.JUMP_FORCE * CONFIG.DOUBLE_JUMP_MULT;
-        jumpCount = 2;
-        createImpact(playerGroup.position.x, playerGroup.position.y, 0x0984e3);
-        playBeep(880, 'sine', 0.1);
-    }
-}
-
-function startDuck() {
-    if (!isDucking) {
-        isDucking = true;
-        if (isGrounded) playBeep(350, 'sine', 0.08);
-    }
-}
-
-function endDuck() { isDucking = false; }
 
 function createImpact(x, y, color) {
     for(let i=0; i<10; i++) {
@@ -630,40 +682,35 @@ function spawnBackgroundScenery(x) {
     }
 }
 
-// 3D Realistic Saguaro Cactus Helper
+// Realistic 3D Saguaro Cactus Helper
 function createRealisticCactusMesh(h) {
     const group = new THREE.Group();
     const mainMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS, roughness: 0.8 });
     const ribMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS_DARK, roughness: 0.9 });
 
-    // Main Trunk
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, h, 8), mainMat);
     trunk.position.y = h / 2;
     trunk.castShadow = true;
     group.add(trunk);
 
-    // Cactus Arms (1 or 2 arms on realistic saguaro)
     const armCount = Math.random() > 0.3 ? (Math.random() > 0.5 ? 2 : 1) : 0;
     for (let a = 0; a < armCount; a++) {
         const side = a === 0 ? 1 : -1;
         const armH = 1.0 + Math.random() * 0.8;
         const armY = 1.0 + Math.random() * (h * 0.4);
         
-        // Horizontal stub
         const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 0.7, 6), mainMat);
         stub.rotation.z = Math.PI / 2;
         stub.position.set(side * 0.5, armY, 0);
         stub.castShadow = true;
         group.add(stub);
 
-        // Vertical upward arm
         const upArm = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.28, armH, 6), mainMat);
         upArm.position.set(side * 0.8, armY + armH / 2 - 0.2, 0);
         upArm.castShadow = true;
         group.add(upArm);
     }
 
-    // Small desert rocks around base
     for (let r = 0; r < 2; r++) {
         const rock = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.25, 0.35), ribMat);
         rock.position.set((Math.random() - 0.5) * 0.8, 0.1, (Math.random() - 0.5) * 0.8);
@@ -687,7 +734,6 @@ function spawnObstacle() {
         const orangeMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_ORANGE, roughness: 0.5 });
         const whiteMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_WHITE, roughness: 0.5 });
 
-        // Left and Right support posts (height 5.2)
         const leftPost = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.2, 0.4), postMat);
         leftPost.position.set(0, 2.6, -1.6);
         leftPost.castShadow = true;
@@ -698,26 +744,21 @@ function spawnObstacle() {
         rightPost.castShadow = true;
         group.add(rightPost);
 
-        // Top hazard hurdle banner (from y=3.0 to y=5.0)
         const bannerW = 3.6, bannerH = 2.0;
         const banner = new THREE.Mesh(new THREE.BoxGeometry(0.4, bannerH, bannerW), orangeMat);
         banner.position.set(0, 4.0, 0);
         banner.castShadow = true;
         group.add(banner);
 
-        // Stripes on banner
         for (let s = -1.2; s <= 1.2; s += 0.8) {
             const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.42, bannerH, 0.35), whiteMat);
             stripe.position.set(0, 4.0, s);
             group.add(stripe);
         }
         
-        // HITBOX: yLow is set to 3.0!
-        // Standing head height = 3.9 -> BAM! Collision!
-        // SIUUU Slide head height = 2.0 -> SAFE! You MUST slide!
+        // HITBOX: yLow is set to 3.0! Standing headY=3.9 > 3.0 -> CRASH! Slide headY=2.05 <= 3.0 -> SAFE!
         collider = { type: 'duck', x: 120, w: 2.2, yLow: 3.0 };
     } else {
-        // 3D Realistic Saguaro Cactus Cluster
         const count = Math.floor(Math.random() * 3) + 1; // 1 to 3 cacti
         let totalWidth = count * 1.6;
         let maxH = 2.5;
@@ -802,16 +843,13 @@ function update(dt) {
             continue;
         }
 
-        // Precise Collision Hitboxes
         const dx = Math.abs(playerGroup.position.x - o.collider.x);
         if (dx < (o.collider.w / 2 + 0.45)) {
             const py = playerGroup.position.y - CONFIG.GROUND_Y;
             if (o.collider.type === 'jump') {
                 if (py < o.collider.h - 0.2) gameOver();
             } else {
-                // For 'duck' hurdles: standing headY is 3.9, which is > yLow=3.0 -> CRASH!
-                // SIUUU slide headY is 2.0 <= 3.0 -> SAFE!
-                const headY = py + (isDucking ? 2.0 : 3.9);
+                const headY = py + (isDucking ? 2.05 : 3.9);
                 if (headY > o.collider.yLow) gameOver();
             }
         }
@@ -853,35 +891,69 @@ function animate() {
         if (isGrounded) {
             if (isDucking) {
                 // RONALDO SIUUU POWER SLIDE POSE!
-                playerParts.torso.position.y = 1.35;
-                playerParts.torso.rotation.z = 0.18; // lean back in slide
-                playerParts.head.position.y = 2.05;  // tucked head (height 2.05 <= 3.0 safe!)
+                // All parts explicitly positioned & rotated so NOTHING floats!
+                playerParts.torso.position.set(0, 1.35, 0);
+                playerParts.torso.rotation.set(-0.25, 0, 0);
                 
-                // Arms thrown back and out in iconic SIUUU pose
-                playerParts.lArm.rotation.set(-Math.PI / 2.3, 0, 0.7);
-                playerParts.rArm.rotation.set(-Math.PI / 2.3, 0, -0.7);
+                playerParts.head.position.set(0, 2.05, -0.2);
+                playerParts.head.rotation.set(0.3, 0, 0);
                 
-                // Legs spread forward in power slide
-                playerParts.lLeg.rotation.set(-Math.PI / 2.2, 0, 0);
-                playerParts.rLeg.rotation.set(-Math.PI / 2.5, 0, 0);
+                // Arms positioned at lowered shoulder height (1.9) and thrown BACK behind the hips in SIUUU V-shape!
+                playerParts.lArm.position.set(-0.6, 1.9, -0.2);
+                playerParts.lArm.rotation.set(0.65, 0, -0.55); // +X swings arm backward behind torso, -Z angles outward in V!
+                
+                playerParts.rArm.position.set(0.6, 1.9, -0.2);
+                playerParts.rArm.rotation.set(0.65, 0, 0.55);  // +X swings arm backward behind torso, +Z angles outward in V!
+                
+                // Legs sliding along the floor
+                playerParts.lLeg.position.set(-0.3, 0.8, 0.2);
+                playerParts.lLeg.rotation.set(-1.3, 0, 0);
+                
+                playerParts.rLeg.position.set(0.3, 0.8, 0.2);
+                playerParts.rLeg.rotation.set(-1.45, 0, 0);
+                
                 playerGroup.rotation.z = 0.1;
             } else {
                 // Standard Run Cycle
-                playerParts.torso.position.y = 2.5 + Math.sin(s*2) * 0.1;
-                playerParts.torso.rotation.z = 0;
-                playerParts.head.position.y = 3.9 + Math.sin(s*2) * 0.15;
-                playerParts.lLeg.rotation.x = Math.sin(s) * 1.2;
-                playerParts.rLeg.rotation.x = Math.sin(s + Math.PI) * 1.2;
+                playerParts.torso.position.set(0, 2.5 + Math.sin(s*2) * 0.1, 0);
+                playerParts.torso.rotation.set(0, 0, 0);
+                
+                playerParts.head.position.set(0, 3.9 + Math.sin(s*2) * 0.15, 0);
+                playerParts.head.rotation.set(0, 0, 0);
+                
+                playerParts.lArm.position.set(-0.6, 3.2 + Math.sin(s*2) * 0.1, 0);
                 playerParts.lArm.rotation.set(Math.sin(s + Math.PI) * 1.0, 0, 0);
+                
+                playerParts.rArm.position.set(0.6, 3.2 + Math.sin(s*2) * 0.1, 0);
                 playerParts.rArm.rotation.set(Math.sin(s) * 1.0, 0, 0);
+                
+                playerParts.lLeg.position.set(-0.3, 1.8, 0);
+                playerParts.lLeg.rotation.set(Math.sin(s) * 1.2, 0, 0);
+                
+                playerParts.rLeg.position.set(0.3, 1.8, 0);
+                playerParts.rLeg.rotation.set(Math.sin(s + Math.PI) * 1.2, 0, 0);
+                
                 playerGroup.rotation.z = 0;
             }
         } else {
             // Air / Jump Pose
-            playerParts.lLeg.rotation.x = -0.5;
-            playerParts.rLeg.rotation.x = 0.2;
+            playerParts.torso.position.set(0, 2.5, 0);
+            playerParts.torso.rotation.set(0, 0, 0);
+            playerParts.head.position.set(0, 3.9, 0);
+            playerParts.head.rotation.set(0, 0, 0);
+            
+            playerParts.lArm.position.set(-0.6, 3.2, 0);
             playerParts.lArm.rotation.set(-2.0, 0, 0);
+            
+            playerParts.rArm.position.set(0.6, 3.2, 0);
             playerParts.rArm.rotation.set(-2.0, 0, 0);
+            
+            playerParts.lLeg.position.set(-0.3, 1.8, 0);
+            playerParts.lLeg.rotation.set(-0.5, 0, 0);
+            
+            playerParts.rLeg.position.set(0.3, 1.8, 0);
+            playerParts.rLeg.rotation.set(0.2, 0, 0);
+            
             playerGroup.rotation.z = velocityY * 0.01;
         }
         
