@@ -647,7 +647,7 @@ function setupLeaderboardAndAccountUI() {
             clickTimer = setTimeout(() => { clickCount = 0; }, 800);
             if (clickCount >= 3) {
                 clickCount = 0;
-                const pin = prompt("ENTER GAME DEVELOPER PIN (1313):");
+                const pin = prompt("ENTER DEVELOPER PASSCODE:");
                 if (pin === "1313" || pin === "admin13") {
                     adminMode = !adminMode;
                     try { localStorage.setItem('stickman_admin_unlocked', '1313'); } catch(e){}
@@ -658,22 +658,6 @@ function setupLeaderboardAndAccountUI() {
                     alert("🚨 ACCESS DENIED: INVALID PASSCODE");
                 }
             }
-        };
-    }
-
-    const clearBotsBtn = document.getElementById('admin-clear-bots-btn');
-    if (clearBotsBtn) {
-        clearBotsBtn.onclick = async () => {
-            if (adminStatus) {
-                adminStatus.classList.remove('hidden', 'success');
-                adminStatus.textContent = "REMOVING BOTS...";
-            }
-            await LeaderboardClient.removeAllBots();
-            if (adminStatus) {
-                adminStatus.className = "success";
-                adminStatus.textContent = "✅ BOT SCORES REMOVED!";
-            }
-            openLeaderboardModal();
         };
     }
 
