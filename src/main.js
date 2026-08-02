@@ -130,8 +130,8 @@ const ScoreVault = {
     }
 };
 
-// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT ---
-const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fbeb5-5f06-73a9-ab6e-7e94c29fe6c8";
+// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (NEVER EXPIRES) ---
+const LEADERBOARD_API_URL = "https://api.npoint.io/040b5562cf9657d50dbf";
 
 const LeaderboardClient = {
     async fetchLeaderboard() {
@@ -156,7 +156,7 @@ const LeaderboardClient = {
             if (response.ok) {
                 data = await response.json();
             }
-            const list = data.leaderboard || [];
+            const list = (data && data.leaderboard) ? data.leaderboard : [];
             const myUUID = AccountManager.getUUID();
             const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
@@ -195,7 +195,7 @@ const LeaderboardClient = {
             const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 30);
 
             const putResponse = await fetch(LEADERBOARD_API_URL, {
-                method: "PUT",
+                method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ leaderboard: updatedList })
             });
@@ -217,7 +217,7 @@ const LeaderboardClient = {
             if (response.ok) {
                 data = await response.json();
             }
-            const list = data.leaderboard || [];
+            const list = (data && data.leaderboard) ? data.leaderboard : [];
 
             // Enforce Name Uniqueness! Another account cannot have the exact same name
             const duplicate = list.find(item => 
@@ -237,7 +237,7 @@ const LeaderboardClient = {
                 list[myIndex].uuid = myUUID;
                 list[myIndex].name = cleanName;
                 await fetch(LEADERBOARD_API_URL, {
-                    method: "PUT",
+                    method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ leaderboard: list })
                 });
