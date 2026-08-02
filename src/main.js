@@ -3,8 +3,8 @@ import * as THREE from 'three';
 // --- DINO-STYLE DAYTIME WORLD CONFIGURATION ---
 const CONFIG = {
     GRAVITY: -80,
-    JUMP_FORCE: 32,
-    DOUBLE_JUMP_MULT: 0.8,
+    JUMP_FORCE: 34,
+    DOUBLE_JUMP_MULT: 0.85,
     GROUND_Y: -2,
     PLAYER_X: -8,
     INITIAL_SPEED: 30,
@@ -508,10 +508,16 @@ function createPlayer() {
     scene.add(playerGroup);
 }
 
-// --- MUTUALLY EXCLUSIVE JUMP & SLIDE CONTROLS ---
+// --- MUTUALLY EXCLUSIVE JUMP & SLIDE CONTROLS (WITH TOUCH DOUBLE-FIRE DEBOUNCE) ---
+let lastJumpTime = 0;
 function jump() {
     // Cannot jump while sliding/ducking!
     if (isDucking) return;
+
+    const now = Date.now();
+    // Prevent accidental double-fire from touch+pointer events within 150ms
+    if (now - lastJumpTime < 150) return;
+    lastJumpTime = now;
 
     if (isGrounded) {
         velocityY = CONFIG.JUMP_FORCE;
@@ -1085,7 +1091,7 @@ function update(dt) {
         if (dx < (o.collider.w / 2 + 0.45)) {
             const py = playerGroup.position.y - CONFIG.GROUND_Y;
             if (o.collider.type === 'jump') {
-                if (py < o.collider.h - 0.2) gameOver();
+                if (py < o.collider.h - 0.25) gameOver();
             } else {
                 const headY = py + (isDucking ? 2.05 : 3.9);
                 if (headY > o.collider.yLow) gameOver();
