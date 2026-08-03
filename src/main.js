@@ -292,6 +292,7 @@ const LeaderboardClient = {
             if (myIndex !== -1) {
                 list[myIndex].uuid = myUUID;
                 list[myIndex].name = cleanName;
+                list[myIndex].sig = SignatureShield.generateSig(list[myIndex]); // re-sign with the new name!
                 await fetch(LEADERBOARD_API_URL, {
                     method: "PUT",
                     headers: { "Content-Type": "application/json", "Accept": "application/json" },
