@@ -133,6 +133,45 @@ const ScoreVault = {
 // --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (USER ACCOUNT OWNED JSONBLOB / ZERO CORS PREFLIGHT ERROR) ---
 const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fc39f-55d8-728a-8dce-468cbbe4c38c";
 
+// --- CRYPTOGRAPHIC LEADERBOARD INTEGRITY & AUTO-SCRUBBING SHIELD ---
+const SignatureShield = {
+    _salt: "STR_DINO_V3_2026_x9f8",
+    generateSig(item) {
+        const nameStr = (item.name || "").toUpperCase().trim();
+        const scoreVal = Math.floor(item.score || 0);
+        const dateStr = item.date || "";
+        const payload = `${nameStr}_${scoreVal}_${dateStr}_${this._salt}`;
+        let hash = 0;
+        for (let i = 0; i < payload.length; i++) {
+            hash = ((hash << 5) - hash) + payload.charCodeAt(i);
+            hash |= 0;
+        }
+        return btoa(`${payload}:${Math.abs(hash).toString(36)}`);
+    },
+    verifySig(item) {
+        if (!item || !item.sig || typeof item.score !== "number") return false;
+        const expectedSig = this.generateSig(item);
+        return item.sig === expectedSig;
+    },
+    filterValid(list) {
+        return (list || []).filter(item => {
+            if (!item.score || item.score <= 0) return false;
+            // Reject known test/forged bot names
+            const upperName = (item.name || "").toUpperCase();
+            if (["API_TESTER", "SEC_TEST", "HACKER", "TEST"].includes(upperName)) return false;
+            if (item.sig) {
+                return this.verifySig(item);
+            }
+            // Sign legacy valid scores
+            if (item.score <= 50000) {
+                item.sig = this.generateSig(item);
+                return true;
+            }
+            return false;
+        });
+    }
+};
+
 const LeaderboardClient = {
     async fetchLeaderboard() {
         try {
@@ -142,7 +181,8 @@ const LeaderboardClient = {
             });
             if (!response.ok) throw new Error("Network response was not ok");
             const res = await response.json();
-            const list = (res && res.leaderboard) ? res.leaderboard : [];
+            const rawList = (res && res.leaderboard) ? res.leaderboard : [];
+            const list = SignatureShield.filterValid(rawList);
             return list.sort((a, b) => b.score - a.score).slice(0, 20);
         } catch (err) {
             console.warn("Leaderboard offline fallback:", err);
@@ -162,7 +202,8 @@ const LeaderboardClient = {
             if (response.ok) {
                 res = await response.json();
             }
-            const list = (res && res.leaderboard) ? res.leaderboard : [];
+            const rawList = (res && res.leaderboard) ? res.leaderboard : [];
+            const list = SignatureShield.filterValid(rawList);
             const myUUID = AccountManager.getUUID();
             const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
@@ -183,19 +224,22 @@ const LeaderboardClient = {
                     list[existingIndex].score = scoreVal;
                     list[existingIndex].date = todayStr;
                     list[existingIndex].hash = token;
+                    list[existingIndex].sig = SignatureShield.generateSig(list[existingIndex]);
                     statusMsg = `🏆 RECORD AUTO-UPDATED! (BEAT OLD ${oldRecord})`;
                 } else {
                     statusMsg = `ℹ️ ONLINE HIGH SCORE (${oldRecord}) IS HIGHER`;
                     return { updated: false, msg: statusMsg };
                 }
             } else {
-                list.push({
+                const newEntry = {
                     uuid: myUUID,
                     name: myName,
                     score: scoreVal,
                     date: todayStr,
                     hash: token
-                });
+                };
+                newEntry.sig = SignatureShield.generateSig(newEntry);
+                list.push(newEntry);
             }
 
             const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 30);
