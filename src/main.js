@@ -130,8 +130,9 @@ const ScoreVault = {
     }
 };
 
-// --- ONLINE LEADERBOARD & ACCOUNT SYNC CLIENT (USER ACCOUNT OWNED JSONBLOB / ZERO CORS PREFLIGHT ERROR) ---
-const LEADERBOARD_API_URL = "https://jsonblob.com/api/jsonBlob/019fc39f-55d8-728a-8dce-468cbbe4c38c";
+// --- 100% PERMANENT SUPABASE POSTGRESQL LEADERBOARD CLIENT ---
+const SUPABASE_URL = "https://fepbpsqcswqphsyekhma.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlcGJwc3Fjc3dxcGhzeWVraG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNjEyOTIsImV4cCI6MjEwMTgzNzI5Mn0.8da9LWF1KkbSUKYKZOwZpsWNm-gOxj4tTz8afugbbiM";
 
 // --- CRYPTOGRAPHIC LEADERBOARD INTEGRITY & AUTO-SCRUBBING SHIELD ---
 const SignatureShield = {
@@ -156,13 +157,11 @@ const SignatureShield = {
     filterValid(list) {
         return (list || []).filter(item => {
             if (!item.score || item.score <= 0) return false;
-            // Reject known test/forged bot names
             const upperName = (item.name || "").toUpperCase();
             if (["API_TESTER", "SEC_TEST", "HACKER", "TEST"].includes(upperName)) return false;
             if (item.sig) {
                 return this.verifySig(item);
             }
-            // Sign legacy valid scores
             if (item.score <= 50000) {
                 item.sig = this.generateSig(item);
                 return true;
@@ -175,84 +174,87 @@ const SignatureShield = {
 const LeaderboardClient = {
     async fetchLeaderboard() {
         try {
-            const response = await fetch(LEADERBOARD_API_URL, { 
-                cache: "no-store",
-                headers: { "Accept": "application/json" }
+            const response = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=*&order=score.desc&limit=25`, { 
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
             });
             if (!response.ok) throw new Error("Network response was not ok");
-            const res = await response.json();
-            const rawList = (res && res.leaderboard) ? res.leaderboard : [];
-            const list = SignatureShield.filterValid(rawList);
-            return list.sort((a, b) => b.score - a.score).slice(0, 20);
+            const list = await response.json();
+            return SignatureShield.filterValid(list);
         } catch (err) {
             console.warn("Leaderboard offline fallback:", err);
             return [];
         }
     },
 
-    // Auto-sync score to global leaderboard: recognizes user by UUID OR Username!
     async syncScore(scoreVal, token) {
         if (!ScoreVault.verify() || !token) return { updated: false, msg: "SECURITY ERROR" };
         try {
-            const response = await fetch(LEADERBOARD_API_URL, { 
-                cache: "no-store",
-                headers: { "Accept": "application/json" }
-            });
-            let res = { leaderboard: [] };
-            if (response.ok) {
-                res = await response.json();
-            }
-            const rawList = (res && res.leaderboard) ? res.leaderboard : [];
-            const list = SignatureShield.filterValid(rawList);
             const myUUID = AccountManager.getUUID();
             const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
 
-            // 1. Find existing account entry by UUID OR exact Username match
-            const existingIndex = list.findIndex(item => 
-                (item.uuid && item.uuid === myUUID) || 
-                ((item.name || "").toUpperCase() === myName.toUpperCase())
-            );
-
-            let statusMsg = "✅ NEW ACCOUNT & RECORD SAVED!";
-            if (existingIndex !== -1) {
-                const oldRecord = list[existingIndex].score || 0;
-                list[existingIndex].uuid = myUUID; // ensure permanent UUID link
-                list[existingIndex].name = myName; // keep name updated
-                
-                if (scoreVal > oldRecord) {
-                    list[existingIndex].score = scoreVal;
-                    list[existingIndex].date = todayStr;
-                    list[existingIndex].hash = token;
-                    list[existingIndex].sig = SignatureShield.generateSig(list[existingIndex]);
-                    statusMsg = `🏆 RECORD AUTO-UPDATED! (BEAT OLD ${oldRecord})`;
-                } else {
-                    statusMsg = `ℹ️ ONLINE HIGH SCORE (${oldRecord}) IS HIGHER`;
-                    return { updated: false, msg: statusMsg };
+            // 1. Fetch current my entry from Supabase to check if new score is higher
+            const getRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(myUUID)}&select=score`, {
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
+            });
+            if (getRes.ok) {
+                const rows = await getRes.json();
+                if (rows && rows.length > 0) {
+                    const oldScore = rows[0].score || 0;
+                    if (scoreVal <= oldScore) {
+                        return { updated: false, msg: `ℹ️ ONLINE HIGH SCORE (${oldScore}) IS HIGHER` };
+                    }
                 }
-            } else {
-                const newEntry = {
-                    uuid: myUUID,
-                    name: myName,
-                    score: scoreVal,
-                    date: todayStr,
-                    hash: token
-                };
-                newEntry.sig = SignatureShield.generateSig(newEntry);
-                list.push(newEntry);
             }
 
-            const updatedList = list.sort((a, b) => b.score - a.score).slice(0, 30);
-
-            const putResponse = await fetch(LEADERBOARD_API_URL, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify({
-                    leaderboard: updatedList
-                })
+            // 2. Enforce Name Uniqueness (check if another UUID has this exact name)
+            const dupRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?name=ilike.${encodeURIComponent(myName)}&uuid=neq.${encodeURIComponent(myUUID)}&select=uuid`, {
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
             });
-            if (!putResponse.ok) throw new Error("Failed to save to Server");
-            return { updated: true, msg: statusMsg };
+            if (dupRes.ok) {
+                const dups = await dupRes.json();
+                if (dups && dups.length > 0) {
+                    return { updated: false, msg: "🚨 NAME ALREADY TAKEN BY ANOTHER RUNNER!" };
+                }
+            }
+
+            // 3. Upsert row into Supabase PostgreSQL table
+            const newEntry = {
+                uuid: myUUID,
+                name: myName,
+                score: scoreVal,
+                date: todayStr,
+                hash: token
+            };
+            newEntry.sig = SignatureShield.generateSig(newEntry);
+
+            const putRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?on_conflict=uuid`, {
+                method: "POST",
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates,return=representation"
+                },
+                body: JSON.stringify(newEntry)
+            });
+            if (!putRes.ok) throw new Error("Failed to save to Supabase");
+            return { updated: true, msg: "🏆 RECORD AUTO-UPDATED ON SUPABASE!" };
         } catch (err) {
             console.warn("Score auto-sync offline mode:", err);
             try { localStorage.setItem('stickman_resonance_v2', scoreVal); } catch(e){}
@@ -260,73 +262,54 @@ const LeaderboardClient = {
         }
     },
 
-    // Validate and rename account (enforce profanity filter + uniqueness across all accounts!)
     async renameAccount(newName) {
         const cleanName = AccountManager.setName(newName);
         const myUUID = AccountManager.getUUID();
         try {
-            const response = await fetch(LEADERBOARD_API_URL, { 
-                cache: "no-store",
-                headers: { "Accept": "application/json" }
+            // Check for duplicates on Supabase
+            const dupRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?name=ilike.${encodeURIComponent(cleanName)}&uuid=neq.${encodeURIComponent(myUUID)}&select=uuid`, {
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
             });
-            let res = { leaderboard: [] };
-            if (response.ok) {
-                res = await response.json();
-            }
-            const list = (res && res.leaderboard) ? res.leaderboard : [];
-
-            // Enforce Name Uniqueness! Another account cannot have the exact same name
-            const duplicate = list.find(item => 
-                (item.name || "").toUpperCase() === cleanName && 
-                item.uuid && item.uuid !== myUUID
-            );
-            if (duplicate) {
-                throw new Error("NAME ALREADY TAKEN BY ANOTHER RUNNER!");
+            if (dupRes.ok) {
+                const dups = await dupRes.json();
+                if (dups && dups.length > 0) {
+                    throw new Error("NAME ALREADY TAKEN BY ANOTHER RUNNER!");
+                }
             }
 
-            // Update my entry on the leaderboard if it exists
-            const myIndex = list.findIndex(item => 
-                (item.uuid && item.uuid === myUUID) || 
-                ((item.name || "").toUpperCase() === cleanName)
-            );
-            if (myIndex !== -1) {
-                list[myIndex].uuid = myUUID;
-                list[myIndex].name = cleanName;
-                list[myIndex].sig = SignatureShield.generateSig(list[myIndex]); // re-sign with the new name!
-                await fetch(LEADERBOARD_API_URL, {
-                    method: "PUT",
-                    headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                    body: JSON.stringify({
-                        leaderboard: list
-                    })
-                });
+            // Update my name on Supabase if I exist
+            const getRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(myUUID)}&select=*`, {
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Accept": "application/json"
+                },
+                cache: "no-store"
+            });
+            if (getRes.ok) {
+                const rows = await getRes.json();
+                if (rows && rows.length > 0) {
+                    const row = rows[0];
+                    row.name = cleanName;
+                    row.sig = SignatureShield.generateSig(row); // Re-sign with the new name!
+                    await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?on_conflict=uuid`, {
+                        method: "POST",
+                        headers: {
+                            "apikey": SUPABASE_KEY,
+                            "Authorization": `Bearer ${SUPABASE_KEY}`,
+                            "Content-Type": "application/json",
+                            "Prefer": "resolution=merge-duplicates,return=representation"
+                        },
+                        body: JSON.stringify(row)
+                    });
+                }
             }
             return cleanName;
-        } catch (err) {
-            throw err;
-        }
-    },
-
-    // Admin Tool: Remove all fake/seed bot accounts
-    async removeAllBots() {
-        const BOT_NAMES = ["NEON_PHANTOM", "GRID_RUNNER", "CYBER_NINJA", "SYNTH_WAVE", "ZERO_COOL"];
-        try {
-            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store", headers: { "Accept": "application/json" } });
-            let res = { leaderboard: [] };
-            if (response.ok) res = await response.json();
-            const list = (res && res.leaderboard) ? res.leaderboard : [];
-            const cleanList = list.filter(item => 
-                item.hash !== "seed" && 
-                !BOT_NAMES.includes((item.name || "").toUpperCase())
-            );
-            await fetch(LEADERBOARD_API_URL, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify({
-                    leaderboard: cleanList
-                })
-            });
-            return cleanList;
         } catch (err) {
             throw err;
         }
@@ -335,22 +318,21 @@ const LeaderboardClient = {
     // Admin Tool: Delete a specific player by UUID or Name
     async deleteScore(targetId) {
         try {
-            const response = await fetch(LEADERBOARD_API_URL, { cache: "no-store", headers: { "Accept": "application/json" } });
-            let res = { leaderboard: [] };
-            if (response.ok) res = await response.json();
-            const list = (res && res.leaderboard) ? res.leaderboard : [];
-            const cleanList = list.filter(item => 
-                item.uuid !== targetId && 
-                (item.name || "").toUpperCase() !== (targetId || "").toUpperCase()
-            );
-            await fetch(LEADERBOARD_API_URL, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify({
-                    leaderboard: cleanList
-                })
+            await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(targetId)}`, {
+                method: "DELETE",
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                }
             });
-            return cleanList;
+            await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?name=eq.${encodeURIComponent(targetId)}`, {
+                method: "DELETE",
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                }
+            });
+            return [];
         } catch (err) {
             throw err;
         }
@@ -359,12 +341,12 @@ const LeaderboardClient = {
     // Admin Tool: Wipe the entire leaderboard clean
     async wipeLeaderboard() {
         try {
-            await fetch(LEADERBOARD_API_URL, {
-                method: "PUT",
-                headers: { "Content-Type": "application/json", "Accept": "application/json" },
-                body: JSON.stringify({
-                    leaderboard: []
-                })
+            await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=neq.00000000`, {
+                method: "DELETE",
+                headers: {
+                    "apikey": SUPABASE_KEY,
+                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                }
             });
             return [];
         } catch (err) {
