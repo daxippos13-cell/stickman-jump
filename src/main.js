@@ -355,8 +355,45 @@ const LeaderboardClient = {
     }
 };
 
+// --- PERFORMANCE: DEVICE DETECTION, QUALITY PRESETS & SHARED GPU RESOURCES ---
+const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+const IS_MOBILE = IS_TOUCH && Math.min(window.screen.width, window.screen.height) < 900;
+const QUALITY = {
+    pixelRatioCap: IS_MOBILE ? 1.5 : 2,
+    antialias: !IS_MOBILE,
+    shadows: !IS_MOBILE,          // Mobile uses a cheap fake blob shadow instead
+    shadowMapSize: 1024,          // Was 2048 VSM (very expensive) -> 1024 PCF
+    sceneryCount: IS_MOBILE ? 12 : 20,
+    scenerySpacing: 45,
+    trailRate: IS_MOBILE ? 0.8 : 0.65,
+    maxTrail: IS_MOBILE ? 7 : 14,
+    impactParticles: IS_MOBILE ? 6 : 10
+};
+
+// Shared geometry/material caches: NOTHING gets re-created per frame or per spawn,
+// and NOTHING leaks GPU memory anymore (this was the main cause of growing lag).
+const SHARED = { geos: {}, mats: {} };
+function sharedGeo(key, factory) {
+    if (!SHARED.geos[key]) {
+        SHARED.geos[key] = factory();
+        SHARED.geos[key].userData.shared = true;
+    }
+    return SHARED.geos[key];
+}
+function sharedMat(key, factory) {
+    if (!SHARED.mats[key]) SHARED.mats[key] = factory();
+    return SHARED.mats[key];
+}
+// Frees only NON-shared geometry (all materials are cached & reused now)
+function disposeGroupDeep(root) {
+    root.traverse(o => {
+        if (o.isMesh && o.geometry && !o.geometry.userData.shared) o.geometry.dispose();
+    });
+}
+
 // --- MACHINE STATE ---
 let scene, camera, renderer, clock;
+let blobShadow = null;
 let playerGroup, playerParts = {}, playerTrail = [];
 let obstacles = [], particles = [], backgroundElements = [];
 let isPlaying = false, gameSpeed = CONFIG.INITIAL_SPEED;
@@ -364,6 +401,7 @@ let isPlaying = false, gameSpeed = CONFIG.INITIAL_SPEED;
 // Physics & Input
 let velocityY = 0, jumpCount = 0, isGrounded = true, isDucking = false;
 let spawnTimer = 0, nextSpawnDelay = 1.0;
+let lastScoreShown = -1;
 
 // Audio
 let audioCtx, masterGain;
@@ -407,15 +445,16 @@ function init() {
     scene.background = new THREE.Color(CONFIG.COLORS.SKY);
     scene.fog = new THREE.FogExp2(CONFIG.COLORS.SKY, 0.008);
 
-    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    // PERFORMANCE: far plane 400 instead of 1000 — everything beyond is fog anyway
+    camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 400);
     camera.position.set(0, 8, 35);
     camera.lookAt(10, 0, 0);
 
-    renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer = new THREE.WebGLRenderer({ antialias: QUALITY.antialias, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.VSMShadowMap;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY.pixelRatioCap));
+    renderer.shadowMap.enabled = QUALITY.shadows;
+    renderer.shadowMap.type = THREE.PCFShadowMap; // Much cheaper than VSM
     document.body.appendChild(renderer.domElement);
 
     clock = new THREE.Clock();
@@ -429,12 +468,15 @@ function init() {
 
     const sun = new THREE.DirectionalLight(0xffffff, 1.25);
     sun.position.set(40, 80, 50);
-    sun.castShadow = true;
-    sun.shadow.camera.left = -100;
-    sun.shadow.camera.right = 100;
-    sun.shadow.camera.top = 100;
-    sun.shadow.camera.bottom = -100;
-    sun.shadow.mapSize.set(2048, 2048);
+    if (QUALITY.shadows) {
+        sun.castShadow = true;
+        // Tighter shadow frustum around the play area = sharper AND much faster
+        sun.shadow.camera.left = -60;
+        sun.shadow.camera.right = 60;
+        sun.shadow.camera.top = 60;
+        sun.shadow.camera.bottom = -60;
+        sun.shadow.mapSize.set(QUALITY.shadowMapSize, QUALITY.shadowMapSize);
+    }
     scene.add(sun);
 
     createDesertTrack();
@@ -476,12 +518,18 @@ function createDesertTrack() {
     trackGroup.add(rightBorder);
 
     // Dashed center lane markings that scroll smoothly
+    // PERFORMANCE: single InstancedMesh = 1 draw call instead of 100 meshes!
     const dashMat = new THREE.MeshBasicMaterial({ color: 0xe6dfba });
-    for (let x = -500; x < 500; x += 10) {
-        const dash = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.04, 0.12), dashMat);
-        dash.position.set(x, 0, 0);
-        trackGroup.add(dash);
+    const dashGeo = new THREE.BoxGeometry(2.5, 0.04, 0.12);
+    const dashCount = 100;
+    const dashes = new THREE.InstancedMesh(dashGeo, dashMat, dashCount);
+    const dashMatrix = new THREE.Matrix4();
+    for (let i = 0; i < dashCount; i++) {
+        dashMatrix.setPosition(-500 + i * 10, 0, 0);
+        dashes.setMatrixAt(i, dashMatrix);
     }
+    dashes.instanceMatrix.needsUpdate = true;
+    trackGroup.add(dashes);
 
     scene.add(trackGroup);
     scene.grid = trackGroup;
@@ -528,6 +576,16 @@ function createPlayer() {
     playerParts.rArm = createLimb(0.6, 3.2, true);
 
     scene.add(playerGroup);
+
+    // PERFORMANCE: on mobile real shadows are off, so draw a cheap fake blob shadow
+    if (!QUALITY.shadows) {
+        const blobGeo = new THREE.CircleGeometry(0.9, 16);
+        const blobMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 });
+        blobShadow = new THREE.Mesh(blobGeo, blobMat);
+        blobShadow.rotation.x = -Math.PI / 2;
+        blobShadow.position.set(CONFIG.PLAYER_X, CONFIG.GROUND_Y + 0.02, 0);
+        scene.add(blobShadow);
+    }
 }
 
 // --- MUTUALLY EXCLUSIVE JUMP & SLIDE CONTROLS (WITH TOUCH DOUBLE-FIRE DEBOUNCE) ---
@@ -792,12 +850,17 @@ function startGame() {
     
     ScoreVault.reset();
     gameSpeed = CONFIG.INITIAL_SPEED;
-    obstacles.forEach(o => scene.remove(o.group));
+    obstacles.forEach(o => { scene.remove(o.group); disposeGroupDeep(o.group); });
     obstacles = [];
-    
-    backgroundElements.forEach(b => scene.remove(b));
-    backgroundElements = [];
-    for(let i=0; i<30; i++) spawnBackgroundScenery(i * 30 - 100);
+
+    // PERFORMANCE: build the background scenery only ONCE and reuse it forever.
+    // The old code destroyed and rebuilt 30 scenery groups on EVERY restart,
+    // leaking geometry each time (big source of lag after several runs).
+    if (backgroundElements.length === 0) {
+        for (let i = 0; i < QUALITY.sceneryCount; i++) {
+            spawnBackgroundScenery(i * QUALITY.scenerySpacing - 100);
+        }
+    }
 
     playerGroup.position.y = CONFIG.GROUND_Y;
     velocityY = 0;
@@ -846,12 +909,18 @@ function gameOver() {
     }
 }
 
+// PERFORMANCE: particle pool — shared geometry, cached material per color,
+// meshes recycled instead of created/leaked on every jump & landing.
+const particlePool = [];
 function createImpact(x, y, color) {
-    for(let i=0; i<10; i++) {
-        const p = new THREE.Mesh(
-            new THREE.BoxGeometry(0.3, 0.3, 0.3),
-            new THREE.MeshBasicMaterial({ color: color })
-        );
+    const geo = sharedGeo('particle', () => new THREE.BoxGeometry(0.3, 0.3, 0.3));
+    const mat = sharedMat('particle_' + color, () => new THREE.MeshBasicMaterial({ color: color }));
+    for (let i = 0; i < QUALITY.impactParticles; i++) {
+        let p = particlePool.pop();
+        if (!p) p = new THREE.Mesh(geo, mat);
+        p.material = mat;
+        p.scale.setScalar(1);
+        p.rotation.set(0, 0, 0);
         p.position.set(x, y + 0.5, (Math.random()-0.5) * 2);
         scene.add(p);
         particles.push({
@@ -865,7 +934,8 @@ function createImpact(x, y, color) {
 // --- DINO-STYLE DAYTIME BACKGROUND SCENERY (NO PLAIN BOXES / NO STRIPES) ---
 function createCloudMesh() {
     const group = new THREE.Group();
-    const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 1.0 });
+    // PERFORMANCE: MeshBasic (no lighting math) + shared cached material
+    const mat = sharedMat('cloud', () => new THREE.MeshBasicMaterial({ color: 0xffffff }));
     const count = 3 + Math.floor(Math.random() * 2);
     for (let i = 0; i < count; i++) {
         const cw = 4 + Math.random() * 5;
@@ -886,10 +956,9 @@ function createMesaMesh(w, h) {
         const lh = (h / layers) * (1.2 - l * 0.2);
         const lw = w * (1.0 - l * 0.25);
         const ld = lw * 0.7;
-        const mat = new THREE.MeshStandardMaterial({ 
-            color: colors[l % colors.length], 
-            roughness: 0.9 
-        });
+        // PERFORMANCE: shared Lambert materials (cheaper shading, cached, no leaks)
+        const c = colors[l % colors.length];
+        const mat = sharedMat('mesa_' + c, () => new THREE.MeshLambertMaterial({ color: c }));
         const layerMesh = new THREE.Mesh(new THREE.BoxGeometry(lw, lh, ld), mat);
         layerMesh.position.set(0, currY + lh / 2, 0);
         currY += lh;
@@ -900,9 +969,10 @@ function createMesaMesh(w, h) {
 
 function createDesertBuildingMesh(w, h) {
     const group = new THREE.Group();
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0xffeaa7, roughness: 0.8 });
-    const roofMat = new THREE.MeshStandardMaterial({ color: 0xdfe6e9, roughness: 0.7 });
-    const winMat = new THREE.MeshBasicMaterial({ color: 0x74b9ff });
+    // PERFORMANCE: shared cached materials for all buildings
+    const baseMat = sharedMat('bldg_base', () => new THREE.MeshLambertMaterial({ color: 0xffeaa7 }));
+    const roofMat = sharedMat('bldg_roof', () => new THREE.MeshLambertMaterial({ color: 0xdfe6e9 }));
+    const winMat = sharedMat('bldg_win', () => new THREE.MeshBasicMaterial({ color: 0x74b9ff }));
 
     const mainBlock = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * 0.8), baseMat);
     mainBlock.position.y = h / 2;
@@ -951,8 +1021,9 @@ function spawnBackgroundScenery(x) {
 // Realistic 3D Saguaro Cactus Helper
 function createRealisticCactusMesh(h) {
     const group = new THREE.Group();
-    const mainMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS, roughness: 0.8 });
-    const ribMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.CACTUS_DARK, roughness: 0.9 });
+    // PERFORMANCE: shared cached materials for every cactus
+    const mainMat = sharedMat('cactus', () => new THREE.MeshLambertMaterial({ color: CONFIG.COLORS.CACTUS }));
+    const ribMat = sharedMat('cactus_dark', () => new THREE.MeshLambertMaterial({ color: CONFIG.COLORS.CACTUS_DARK }));
 
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.5, h, 8), mainMat);
     trunk.position.y = h / 2;
@@ -996,9 +1067,10 @@ function spawnObstacle() {
 
     if (isSlideBarricade) {
         // Subway Surfers-style Hazard Barricade (MUST SLIDE UNDER!)
-        const postMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_POST, roughness: 0.7 });
-        const orangeMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_ORANGE, roughness: 0.5 });
-        const whiteMat = new THREE.MeshStandardMaterial({ color: CONFIG.COLORS.BARRICADE_WHITE, roughness: 0.5 });
+        // PERFORMANCE: shared cached materials for every barricade
+        const postMat = sharedMat('barr_post', () => new THREE.MeshLambertMaterial({ color: CONFIG.COLORS.BARRICADE_POST }));
+        const orangeMat = sharedMat('barr_orange', () => new THREE.MeshLambertMaterial({ color: CONFIG.COLORS.BARRICADE_ORANGE }));
+        const whiteMat = sharedMat('barr_white', () => new THREE.MeshLambertMaterial({ color: CONFIG.COLORS.BARRICADE_WHITE }));
 
         const leftPost = new THREE.Mesh(new THREE.BoxGeometry(0.3, 5.2, 0.4), postMat);
         leftPost.position.set(0, 2.6, -1.6);
@@ -1044,17 +1116,33 @@ function spawnObstacle() {
     obstacles.push({ group, collider });
 }
 
+// PERFORMANCE: trail segments come from a reusable pool with ONE shared
+// geometry + material. The old code created (and never disposed!) a new
+// geometry + material every frame — a GPU memory leak that made the game
+// lag more and more the longer you played.
+const trailPool = [];
+function getTrailSegment() {
+    let seg = trailPool.pop();
+    if (!seg) {
+        seg = new THREE.Mesh(
+            sharedGeo('trail', () => new THREE.BoxGeometry(0.8, 1.8, 0.6)),
+            sharedMat('trail', () => new THREE.MeshBasicMaterial({
+                color: CONFIG.COLORS.STICKMAN_SHIRT,
+                transparent: true,
+                opacity: 0.25
+            }))
+        );
+    }
+    seg.scale.setScalar(1);
+    seg.visible = true;
+    return seg;
+}
+
 function updateTrail(dt) {
     if (!isPlaying) return;
-    
-    if (Math.random() > 0.6) {
-        const trailGeo = new THREE.BoxGeometry(0.8, 1.8, 0.6);
-        const trailMat = new THREE.MeshBasicMaterial({ 
-            color: CONFIG.COLORS.STICKMAN_SHIRT, 
-            transparent: true, 
-            opacity: 0.25 
-        });
-        const segment = new THREE.Mesh(trailGeo, trailMat);
+
+    if (Math.random() > QUALITY.trailRate && playerTrail.length < QUALITY.maxTrail) {
+        const segment = getTrailSegment();
         segment.position.copy(playerGroup.position);
         segment.position.y += 2.5;
         segment.rotation.copy(playerGroup.rotation);
@@ -1069,6 +1157,7 @@ function updateTrail(dt) {
         t.mesh.position.x -= gameSpeed * dt * 0.4;
         if (t.life <= 0) {
             scene.remove(t.mesh);
+            trailPool.push(t.mesh);
             playerTrail.splice(i, 1);
         }
     }
@@ -1093,9 +1182,10 @@ function update(dt) {
     const moveDist = gameSpeed * dt;
     scene.grid.position.x = (scene.grid.position.x - moveDist) % 10;
 
+    const sceneryLoop = QUALITY.sceneryCount * QUALITY.scenerySpacing;
     backgroundElements.forEach(b => {
         b.position.x -= moveDist * 0.3;
-        if (b.position.x < -120) b.position.x += 800;
+        if (b.position.x < -120) b.position.x += sceneryLoop;
     });
 
     for (let i = obstacles.length - 1; i >= 0; i--) {
@@ -1105,6 +1195,7 @@ function update(dt) {
 
         if (o.group.position.x < -30) {
             scene.remove(o.group);
+            disposeGroupDeep(o.group); // PERFORMANCE: free GPU memory (no more leak!)
             obstacles.splice(i, 1);
             continue;
         }
@@ -1129,13 +1220,28 @@ function update(dt) {
         p.mesh.rotation.x += dt * 5;
         if (p.life <= 0) {
             scene.remove(p.mesh);
+            particlePool.push(p.mesh);
             particles.splice(i, 1);
         }
     }
 
+    // PERFORMANCE: fake blob shadow follows the player on mobile
+    if (blobShadow) {
+        blobShadow.position.x = playerGroup.position.x;
+        const airHeight = playerGroup.position.y - CONFIG.GROUND_Y;
+        const shrink = Math.max(0.35, 1 - airHeight * 0.06);
+        blobShadow.scale.setScalar(shrink);
+        blobShadow.material.opacity = 0.25 * shrink;
+    }
+
     gameSpeed = Math.min(CONFIG.MAX_SPEED, gameSpeed + CONFIG.SPEED_INC * dt);
     ScoreVault.add(moveDist * 0.1);
-    ui.score.textContent = Math.floor(ScoreVault.get()).toString().padStart(5, '0');
+    // PERFORMANCE: only touch the DOM when the visible score actually changes
+    const scoreInt = Math.floor(ScoreVault.get());
+    if (scoreInt !== lastScoreShown) {
+        lastScoreShown = scoreInt;
+        ui.score.textContent = scoreInt.toString().padStart(5, '0');
+    }
 
     spawnTimer += dt;
     if (spawnTimer > nextSpawnDelay) {
