@@ -130,9 +130,9 @@ const ScoreVault = {
     }
 };
 
-// --- 100% PERMANENT SUPABASE POSTGRESQL LEADERBOARD CLIENT ---
-const SUPABASE_URL = "https://fepbpsqcswqphsyekhma.supabase.co";
-const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZlcGJwc3Fjc3dxcGhzeWVraG1hIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYyNjEyOTIsImV4cCI6MjEwMTgzNzI5Mn0.8da9LWF1KkbSUKYKZOwZpsWNm-gOxj4tTz8afugbbiM";
+// --- 100% PERMANENT NEON POSTGRESQL LEADERBOARD CLIENT (Data API / PostgREST) ---
+const NEON_URL = "https://ep-icy-recipe-ay8m1giu.apirest.c-5.us-east-2.aws.neon.tech/neondb";
+const NEON_KEY = "eyJhbGciOiJSUzI1NiIsImtpZCI6InN0aWNrbWFuLWtleS0xIiwidHlwIjoiSldUIn0.eyJyb2xlIjoiYXV0aGVudGljYXRlZCIsInN1YiI6InB1YmxpY19nYW1lX2NsaWVudCIsImlzcyI6InN0aWNrbWFuLXJ1bm5lciIsImlhdCI6MTc4NjAwMDAwMCwiZXhwIjoyMTAxODM3MjkyfQ.koT-dBtJanUIKacmyCQBLl8UAw_MpS09n__y3ebUHxjCriuH8of9hRfzHilphkwhvxq4XG-Bk4UoQ2CKTOJWFRIpU7nkjVu6UC5Ld7D77Xk8LOurmJjK2YvObenNgpejVBry0mBWgTA71lipLjsYyVOX51FcsmHOlx8zWRkK1lCnie3ihOHk5OQ5neS0FBuRBYBi5d_2tkdfqWZzMHEAtvwSFkoeJLVrLkSaSV1OjMpRSG8R8FSzLMiySJwq-8Mbz0jAi8ogfPJyu5VLKnxy8pGzL3SOe08pWLGSNrtPkhdBhhbFsCgXSmV18MHYLtzJL-ORjI6rm0sbzY6pnGTRiQ";
 
 // --- CRYPTOGRAPHIC LEADERBOARD INTEGRITY & AUTO-SCRUBBING SHIELD ---
 const SignatureShield = {
@@ -174,10 +174,9 @@ const SignatureShield = {
 const LeaderboardClient = {
     async fetchLeaderboard() {
         try {
-            const response = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?select=*&order=score.desc&limit=25`, { 
+            const response = await fetch(`${NEON_URL}/rest/v1/leaderboard?select=*&order=score.desc&limit=25`, { 
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Authorization": `Bearer ${NEON_KEY}`,
                     "Accept": "application/json"
                 },
                 cache: "no-store"
@@ -198,11 +197,10 @@ const LeaderboardClient = {
             const myName = AccountManager.getName();
             const todayStr = new Date().toISOString().split('T')[0];
 
-            // 1. Fetch current my entry from Supabase to check if new score is higher
-            const getRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(myUUID)}&select=score`, {
+            // 1. Fetch current my entry from Neon to check if new score is higher
+            const getRes = await fetch(`${NEON_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(myUUID)}&select=score`, {
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Authorization": `Bearer ${NEON_KEY}`,
                     "Accept": "application/json"
                 },
                 cache: "no-store"
@@ -218,10 +216,9 @@ const LeaderboardClient = {
             }
 
             // 2. Enforce Name Uniqueness (check if another UUID has this exact name)
-            const dupRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?name=ilike.${encodeURIComponent(myName)}&uuid=neq.${encodeURIComponent(myUUID)}&select=uuid`, {
+            const dupRes = await fetch(`${NEON_URL}/rest/v1/leaderboard?name=ilike.${encodeURIComponent(myName)}&uuid=neq.${encodeURIComponent(myUUID)}&select=uuid`, {
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Authorization": `Bearer ${NEON_KEY}`,
                     "Accept": "application/json"
                 },
                 cache: "no-store"
@@ -233,7 +230,7 @@ const LeaderboardClient = {
                 }
             }
 
-            // 3. Upsert row into Supabase PostgreSQL table
+            // 3. Upsert row into Neon PostgreSQL table
             const newEntry = {
                 uuid: myUUID,
                 name: myName,
@@ -243,18 +240,17 @@ const LeaderboardClient = {
             };
             newEntry.sig = SignatureShield.generateSig(newEntry);
 
-            const putRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?on_conflict=uuid`, {
+            const putRes = await fetch(`${NEON_URL}/rest/v1/leaderboard?on_conflict=uuid`, {
                 method: "POST",
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Authorization": `Bearer ${NEON_KEY}`,
                     "Content-Type": "application/json",
                     "Prefer": "resolution=merge-duplicates,return=representation"
                 },
                 body: JSON.stringify(newEntry)
             });
-            if (!putRes.ok) throw new Error("Failed to save to Supabase");
-            return { updated: true, msg: "🏆 RECORD AUTO-UPDATED ON SUPABASE!" };
+            if (!putRes.ok) throw new Error("Failed to save to Neon");
+            return { updated: true, msg: "🏆 RECORD AUTO-UPDATED ON NEON!" };
         } catch (err) {
             console.warn("Score auto-sync offline mode:", err);
             try { localStorage.setItem('stickman_resonance_v2', scoreVal); } catch(e){}
@@ -266,11 +262,10 @@ const LeaderboardClient = {
         const cleanName = AccountManager.setName(newName);
         const myUUID = AccountManager.getUUID();
         try {
-            // Check for duplicates on Supabase
-            const dupRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?name=ilike.${encodeURIComponent(cleanName)}&uuid=neq.${encodeURIComponent(myUUID)}&select=uuid`, {
+            // Check for duplicates on Neon
+            const dupRes = await fetch(`${NEON_URL}/rest/v1/leaderboard?name=ilike.${encodeURIComponent(cleanName)}&uuid=neq.${encodeURIComponent(myUUID)}&select=uuid`, {
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Authorization": `Bearer ${NEON_KEY}`,
                     "Accept": "application/json"
                 },
                 cache: "no-store"
@@ -282,11 +277,10 @@ const LeaderboardClient = {
                 }
             }
 
-            // Update my name on Supabase if I exist
-            const getRes = await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(myUUID)}&select=*`, {
+            // Update my name on Neon if I exist
+            const getRes = await fetch(`${NEON_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(myUUID)}&select=*`, {
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`,
+                    "Authorization": `Bearer ${NEON_KEY}`,
                     "Accept": "application/json"
                 },
                 cache: "no-store"
@@ -297,11 +291,10 @@ const LeaderboardClient = {
                     const row = rows[0];
                     row.name = cleanName;
                     row.sig = SignatureShield.generateSig(row); // Re-sign with the new name!
-                    await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?on_conflict=uuid`, {
+                    await fetch(`${NEON_URL}/rest/v1/leaderboard?on_conflict=uuid`, {
                         method: "POST",
                         headers: {
-                            "apikey": SUPABASE_KEY,
-                            "Authorization": `Bearer ${SUPABASE_KEY}`,
+                            "Authorization": `Bearer ${NEON_KEY}`,
                             "Content-Type": "application/json",
                             "Prefer": "resolution=merge-duplicates,return=representation"
                         },
@@ -318,18 +311,16 @@ const LeaderboardClient = {
     // Admin Tool: Delete a specific player by UUID or Name
     async deleteScore(targetId) {
         try {
-            await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(targetId)}`, {
+            await fetch(`${NEON_URL}/rest/v1/leaderboard?uuid=eq.${encodeURIComponent(targetId)}`, {
                 method: "DELETE",
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                    "Authorization": `Bearer ${NEON_KEY}`
                 }
             });
-            await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?name=eq.${encodeURIComponent(targetId)}`, {
+            await fetch(`${NEON_URL}/rest/v1/leaderboard?name=eq.${encodeURIComponent(targetId)}`, {
                 method: "DELETE",
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                    "Authorization": `Bearer ${NEON_KEY}`
                 }
             });
             return [];
@@ -341,11 +332,10 @@ const LeaderboardClient = {
     // Admin Tool: Wipe the entire leaderboard clean
     async wipeLeaderboard() {
         try {
-            await fetch(`${SUPABASE_URL}/rest/v1/leaderboard?uuid=neq.00000000`, {
+            await fetch(`${NEON_URL}/rest/v1/leaderboard?uuid=neq.00000000`, {
                 method: "DELETE",
                 headers: {
-                    "apikey": SUPABASE_KEY,
-                    "Authorization": `Bearer ${SUPABASE_KEY}`
+                    "Authorization": `Bearer ${NEON_KEY}`
                 }
             });
             return [];
