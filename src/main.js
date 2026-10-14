@@ -475,6 +475,13 @@ function init() {
     setupLeaderboardAndAccountUI();
     
     window.addEventListener('resize', onWindowResize);
+    // Mobile rotation fix: some browsers fire orientationchange with stale
+    // innerWidth/innerHeight, so re-run the resize handler shortly after.
+    window.addEventListener('orientationchange', () => {
+        onWindowResize();
+        setTimeout(onWindowResize, 250);
+        setTimeout(onWindowResize, 600);
+    });
     onWindowResize();
 }
 
@@ -746,7 +753,10 @@ function setupLeaderboardAndAccountUI() {
                 const pin = prompt("ENTER DEVELOPER PASSCODE:");
                 if (pin === "1313" || pin === "admin13") {
                     adminMode = !adminMode;
-                    try { localStorage.setItem('stickman_admin_unlocked', '1313'); } catch(e){}
+                    try {
+                        if (adminMode) localStorage.setItem('stickman_admin_unlocked', '1313');
+                        else localStorage.removeItem('stickman_admin_unlocked');
+                    } catch(e){}
                     if (adminPanel) adminPanel.classList.toggle('hidden', !adminMode);
                     openLeaderboardModal();
                     alert(adminMode ? "✅ ADMIN MODE ENABLED! Developer controls unlocked." : "🔒 ADMIN MODE DISABLED");
@@ -1330,15 +1340,22 @@ function onWindowResize() {
     const width = window.innerWidth;
     const height = window.innerHeight;
     camera.aspect = width / height;
-    
+
     if (width < height) {
-        camera.fov = 65;
-        camera.position.z = 40;
+        // PORTRAIT FIX: the old camera looked at (10,0,0) with a narrow
+        // horizontal FOV, so the player at x=-8 was ~26 degrees off-center
+        // and completely OUT OF FRAME. Now: wider FOV, camera pulled back,
+        // and we aim between the player and the incoming obstacles so the
+        // stickman is always visible AND you can still see ahead.
+        camera.fov = 75;
+        camera.position.set(0, 8, 60);
+        camera.lookAt(4, 1, 0);
     } else {
         camera.fov = 50;
-        camera.position.z = 35;
+        camera.position.set(0, 8, 35);
+        camera.lookAt(10, 0, 0);
     }
-    
+
     camera.updateProjectionMatrix();
     renderer.setSize(width, height);
 }

@@ -241,6 +241,16 @@ button:active {
     align-items: center;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
     text-align: center;
+    /* FIX: allow scrolling so content below the fold (e.g. admin panel)
+       is always reachable on short screens / landscape phones */
+    overflow-y: auto;
+}
+
+/* FIX: prevent flex children from being squashed to zero height when the
+   modal hits max-height; the container scrolls instead, so every element
+   (including the admin panel at the bottom) stays visible */
+.leaderboard-content > *, .modal-content > * {
+    flex-shrink: 0;
 }
 
 .leaderboard-content h2, .modal-content h2 {
@@ -628,5 +638,69 @@ button.danger-btn:hover {
 
     .player-date {
         display: none;
+    }
+}
+
+/* Landscape phones (flipped): compact layout so the leaderboard modal,
+   CLOSE button AND the hidden admin panel all fit / scroll properly */
+@media (max-height: 520px) and (orientation: landscape) {
+    #main-menu, #game-over {
+        padding: 16px 28px;
+        max-height: 94vh;
+    }
+
+    h1 {
+        font-size: 26px;
+        margin-bottom: 6px;
+    }
+
+    p {
+        font-size: 12px;
+        margin-bottom: 10px;
+    }
+
+    button {
+        padding: 9px 22px;
+        font-size: 15px;
+    }
+
+    .leaderboard-content, .modal-content {
+        padding: 14px 22px;
+        max-height: 94vh;
+    }
+
+    .leaderboard-content h2, .modal-content h2 {
+        font-size: 20px;
+        margin-bottom: 2px;
+    }
+
+    .leaderboard-subtitle {
+        font-size: 10px;
+        margin-bottom: 6px;
+    }
+
+    #leaderboard-list {
+        max-height: none;
+        margin-bottom: 10px;
+    }
+
+    #admin-panel {
+        margin-top: 10px;
+        padding: 10px;
+    }
+
+    .controls-hint {
+        display: none;
+    }
+
+    #mobile-controls {
+        bottom: 12px;
+        padding: 0 20px;
+    }
+
+    .touch-btn {
+        width: 64px;
+        height: 64px;
+        font-size: 12px;
     }
 }
